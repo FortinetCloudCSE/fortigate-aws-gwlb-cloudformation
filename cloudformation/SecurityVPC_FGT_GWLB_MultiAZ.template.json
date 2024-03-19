@@ -1,0 +1,8408 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "(v5.2) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
+	"Metadata": {
+		"AWS::CloudFormation::Interface": {
+			"ParameterGroups": [
+				{
+					"Label": {
+						"default": "VPC Configuration"
+					},
+					"Parameters": [
+						"VPCCIDR",
+						"NumOfAZs",
+						"AZs",
+						"PublicSubnetCIDRs",
+						"PrivateSubnetCIDRs",
+						"GwlbSubnetCIDRs",
+						"TgwAttachSubnetCIDRs",
+						"TgwAttach"
+					]
+				},
+				{
+					"Label": {
+						"default": "TGW Configuration"
+					},
+					"Parameters": [
+						"TgwCreation",
+						"TgwExisting",
+						"TgwExistingSecurityTgwRtb",
+						"TgwExistingSpokeTgwRtb",
+						"TgwExistingSpokeTgwRtbRoute"
+					]
+				},
+				{
+					"Label": {
+						"default": "FortiGate Instance Configuration"
+					},
+					"Parameters": [
+						"NumOfFgtsPerAZ",
+						"InstanceType",
+						"CIDRForInstanceAccess",
+						"KeyPair",
+						"EncryptVolumes",
+						"InitS3Bucket",
+						"FortiOSVersion",
+						"LicenseType",
+						"LicenseFilesFor1stFgtPerAZ",
+						"LicenseFilesFor2ndFgtPerAZ",
+						"FortiFlexTokensFor1stFgtPerAZ",
+						"FortiFlexTokensFor2ndFgtPerAZ"
+					]
+				}
+			]
+		}
+	},
+	"Parameters": {
+		"VPCCIDR": {
+			"Type": "String",
+			"Default": "10.0.0.0/16",
+			"Description": "Provide a network CIDR for the VPC"
+		},
+		"NumOfAZs": {
+			"Type": "String",
+			"Default": "2",
+			"Description": "Select the number of Availability Zones to use (Min 2, Max 6)",
+			"AllowedValues": [
+				"2",
+				"3",
+				"4",
+				"5",
+				"6"
+			]
+		},
+		"AZs": {
+			"Type": "List<AWS::EC2::AvailabilityZone::Name>",
+			"Description": "Select the Availability Zones (Min 2, Max 6)"
+		},
+		"PublicSubnetCIDRs": {
+			"Type": "CommaDelimitedList",
+			"Default": "10.0.1.0/24, 10.0.2.0/24",
+			"Description": "Provide a list of network CIDRs for Public Subnets (Min 2, Max 6)"
+		},
+		"PrivateSubnetCIDRs": {
+			"Type": "CommaDelimitedList",
+			"Default": "10.0.3.0/24, 10.0.4.0/24",
+			"Description": "Provide a list of network CIDRs for Private Subnets (Min 2, Max 6)"
+		},
+		"GwlbSubnetCIDRs": {
+			"Type": "CommaDelimitedList",
+			"Default": "10.0.5.0/24, 10.0.6.0/24",
+			"Description": "Provide a list of network CIDRs for GLWB Subnets (Min 2, Max 6)"
+		},
+		"TgwAttachSubnetCIDRs": {
+			"Type": "CommaDelimitedList",
+			"Default": "10.0.7.0/24, 10.0.8.0/24",
+			"Description": "Provide a list of network CIDRs for TGW Attachment Subnets (Min 2, Max 6)"
+		},
+		"TgwAttach": {
+			"Type": "String",
+			"Description": "Select Yes if you plan to attach this VPC to Transit GW with a VPC attachment, otherwise select No",
+			"AllowedValues": [
+				"Yes",
+				"No"
+			]
+		},
+		"TgwCreation": {
+			"Type": "String",
+			"Description": "Select Yes if you want to deploy a new Transit GW and two Transit GW Route Tables",
+			"AllowedValues": [
+				"Yes",
+				"No"
+			]
+		},
+		"TgwExisting": {
+			"Type": "String",
+			"Description": "[Leave blank if an existing TGW will not be used] If you are using an existing Transit GW, provide the Transit GW ID to create VPC routes to reach it"
+		},
+		"TgwExistingSecurityTgwRtb": {
+			"Type": "String",
+			"Description": "[Leave blank if an existing TGW will not be used] If you are using an existing Transit GW, provide the Transit GW RouteTable ID for the security VPC to associate to"
+		},
+		"TgwExistingSpokeTgwRtb": {
+			"Type": "String",
+			"Description": "[Leave blank if an existing TGW will not be used] If you are using an existing Transit GW, provide the Transit GW RouteTable ID that your spoke VPCs are associated with"
+		},
+		"TgwExistingSpokeTgwRtbRoute": {
+			"Type": "String",
+			"Default": "10.0.0.0/8",
+			"Description": "[Ignore if an existing TGW will not be used] If you are using an existing Transit GW, provide a network CIDR to create a route in your Transit GW RouteTable that your spoke VPCs are associated with"
+		},
+		"NumOfFgtsPerAZ": {
+			"Type": "String",
+			"Default": "1",
+			"Description": "Select the number of Fgts to deploy in each AZ (ie Fgt1a-us-east-1a, Fgt1b-us-east-1a) (Min 1, Max 2)",
+			"AllowedValues": [
+				"1",
+				"2"
+			]
+		},
+		"InstanceType": {
+			"Type": "String",
+			"Default": "c6i.xlarge",
+			"Description": "Select the instance type for the FortiGates",
+			"AllowedValues": [
+				"c4.large",
+				"c5.large",
+				"c5.xlarge",
+				"c5.2xlarge",
+				"c5.4xlarge",
+				"c5.9xlarge",
+				"c5.18xlarge",
+				"c5n.large",
+				"c5n.xlarge",
+				"c5n.2xlarge",
+				"c5n.4xlarge",
+				"c5n.9xlarge",
+				"c5n.18xlarge",
+				"c6i.large",
+				"c6i.xlarge",
+				"c6i.2xlarge",
+				"c6i.4xlarge",
+				"c6i.8xlarge",
+				"c6i.16xlarge",
+				"c6i.24xlarge",
+				"c6in.large",
+				"c6in.xlarge",
+				"c6in.2xlarge",
+				"c6in.4xlarge",
+				"c6in.8xlarge",
+				"c6in.16xlarge",
+				"c6g.large",
+				"c6g.xlarge",
+				"c6g.2xlarge",
+				"c6g.4xlarge",
+				"c6g.8xlarge",
+				"c6g.16xlarge",
+				"c6gn.large",
+				"c6gn.xlarge",
+				"c6gn.2xlarge",
+				"c6gn.4xlarge",
+				"c6gn.8xlarge",
+				"c6gn.16xlarge",
+				"c7g.large",
+				"c7g.xlarge",
+				"c7g.2xlarge",
+				"c7g.4xlarge",
+				"c7g.8xlarge",
+				"c7g.16xlarge",
+				"c7gn.large",
+				"c7gn.xlarge",
+				"c7gn.2xlarge",
+				"c7gn.4xlarge",
+				"c7gn.8xlarge",
+				"c7gn.16xlarge"
+			]
+		},
+		"CIDRForInstanceAccess": {
+			"Type": "String",
+			"Default": "0.0.0.0/0",
+			"Description": "Provide a network CIDR from which the FortiGate instances will be accessed"
+		},
+		"KeyPair": {
+			"Type": "AWS::EC2::KeyPair::KeyName",
+			"Description": "Select a keypair to associate with the FortiGates"
+		},
+		"EncryptVolumes": {
+			"Type": "String",
+			"Description": "Select 'true' to encrypt the FortiGate instance OS and Log volumes with your account's KMS default master key for EBS.  Otherwise select false to leave unencrypted",
+			"AllowedValues": [
+				"true",
+				"false"
+			]
+		},
+		"InitS3Bucket": {
+			"Type": "String",
+			"Description": "[BYOL Only, leave blank otherwise] Provide the Init S3 Bucket name, where your config files will be created  *** the bucket should exist in the same region as this deployment for successful bootstrapping ***"
+		},
+		"FortiOSVersion": {
+			"Type": "String",
+			"Default": "7.2.x",
+			"Description": "Select the version of FortiOS to use (latest GA AMI will be used)",
+			"AllowedValues": [
+				"7.0.x",
+				"7.2.x",
+				"7.4.x"
+			]
+		},
+		"LicenseType": {
+			"Type": "String",
+			"Description": "Select the license type for the FortiGates",
+			"AllowedValues": [
+				"BYOL",
+				"Flex",
+				"PAYG"
+			]
+		},
+		"LicenseFilesFor1stFgtPerAZ": {
+			"Type": "CommaDelimitedList",
+			"Description": "[BYOL Only, leave blank otherwise] Provide a list of file names of the BYOL license files in the Init S3 Bucket for the first Fgts to be deployed in each AZ (ie 'fgt1a.lic, prefix/fgt2a.lic' for Fgt1a-us-east-1a, Fgt1b-us-east-1a) (Min 2, Max 6)"
+		},
+		"LicenseFilesFor2ndFgtPerAZ": {
+			"Type": "CommaDelimitedList",
+			"Description": "[BYOL Only, leave blank otherwise] Provide a list of file names of the BYOL license files in the Init S3 Bucket for the second Fgts to be deployed in each AZ (ie 'fgt1b.lic, prefix/fgt2b.lic' for Fgt1a-us-east-1a, Fgt1b-us-east-1a) (Min 2, Max 6)"
+		},
+		"FortiFlexTokensFor1stFgtPerAZ": {
+			"Type": "CommaDelimitedList",
+			"Description": "[Flex Only, leave blank otherwise] Provide a list of FortiFlex Tokens for the first Fgts to be deployed in each AZ (ie '1A1A1A1A1A1A1A1A1A1A, 2A2A2A2A2A2A2A2A2A2A' for Fgt1a-us-east-1a, Fgt1b-us-east-1a) (Min 2, Max 6)"
+		},
+		"FortiFlexTokensFor2ndFgtPerAZ": {
+			"Type": "CommaDelimitedList",
+			"Description": "[Flex Only, leave blank otherwise] Provide a list of FortiFlex Tokens for the second Fgts to be deployed in each AZ (ie '1B1B1B1B1B1B1B1B1B1B, 2B2B2B2B2B2B2B2B2B2B' for Fgt2a-us-east-2b, Fgt2b-us-east-2b) (Min 2, Max 6)"
+		}
+	},
+	"Mappings": {
+		"FortiOSIntelAMISearchString": {
+			"6.4.x": {
+				"BYOL": "FortiGate-VM64-AWS *(6.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"Flex": "FortiGate-VM64-AWS *(6.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"PAYG": "FortiGate-VM64-AWSONDEMAND *(6.4.*)*|2wqkpek696qhdeo7lbbjncqli"
+			},
+			"7.0.x": {
+				"BYOL": "FortiGate-VM64-AWS *(7.0.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"Flex": "FortiGate-VM64-AWS *(7.0.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"PAYG": "FortiGate-VM64-AWSONDEMAND *(7.0.*)*|2wqkpek696qhdeo7lbbjncqli"
+			},
+			"7.2.x": {
+				"BYOL": "FortiGate-VM64-AWS *(7.2.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"Flex": "FortiGate-VM64-AWS *(7.2.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"PAYG": "FortiGate-VM64-AWSONDEMAND *(7.2.*)*|2wqkpek696qhdeo7lbbjncqli"
+			},
+			"7.4.x": {
+				"BYOL": "FortiGate-VM64-AWS *(7.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"Flex": "FortiGate-VM64-AWS *(7.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"PAYG": "FortiGate-VM64-AWSONDEMAND *(7.4.*)*|2wqkpek696qhdeo7lbbjncqli"
+			}
+		},
+		"FortiOSArmAMISearchString": {
+			"6.4.x": {
+				"BYOL": "FortiGate-VMARM64-AWS *(6.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"Flex": "FortiGate-VMARM64-AWS *(6.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(6.4.*)*|8gc40z1w65qjt61p9ps88057n"
+			},
+			"7.0.x": {
+				"BYOL": "FortiGate-VMARM64-AWS *(7.0.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"Flex": "FortiGate-VMARM64-AWS *(7.0.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(7.0.*)*|8gc40z1w65qjt61p9ps88057n"
+			},
+			"7.2.x": {
+				"BYOL": "FortiGate-VMARM64-AWS *(7.2.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"Flex": "FortiGate-VMARM64-AWS *(7.2.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(7.2.*)*|8gc40z1w65qjt61p9ps88057n"
+			},
+			"7.4.x": {
+				"BYOL": "FortiGate-VMARM64-AWS *(7.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"Flex": "FortiGate-VMARM64-AWS *(7.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(7.4.*)*|8gc40z1w65qjt61p9ps88057n"
+			}
+		}
+	},
+	"Conditions": {
+		"2AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"2"
+			]
+		},
+		"3AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"3"
+			]
+		},
+		"4AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"4"
+			]
+		},
+		"5AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"5"
+			]
+		},
+		"6AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"6"
+			]
+		},
+		"2AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "2AZs"
+				},
+				{
+					"Condition": "3AZs"
+				},
+				{
+					"Condition": "4AZs"
+				},
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"3AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "3AZs"
+				},
+				{
+					"Condition": "4AZs"
+				},
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"4AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "4AZs"
+				},
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"5AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"2FgtsPerAZ": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfFgtsPerAZ"
+				},
+				"2"
+			]
+		},
+		"2AZs+And2FgtsPerAZ": {
+			"Fn::And": [
+				{
+					"Condition": "2AZs+"
+				},
+				{
+					"Condition": "2FgtsPerAZ"
+				}
+			]
+		},
+		"3AZs+And2FgtsPerAZ": {
+			"Fn::And": [
+				{
+					"Condition": "3AZs+"
+				},
+				{
+					"Condition": "2FgtsPerAZ"
+				}
+			]
+		},
+		"4AZs+And2FgtsPerAZ": {
+			"Fn::And": [
+				{
+					"Condition": "4AZs+"
+				},
+				{
+					"Condition": "2FgtsPerAZ"
+				}
+			]
+		},
+		"5AZs+And2FgtsPerAZ": {
+			"Fn::And": [
+				{
+					"Condition": "5AZs+"
+				},
+				{
+					"Condition": "2FgtsPerAZ"
+				}
+			]
+		},
+		"6AZsAnd2FgtsPerAZ": {
+			"Fn::And": [
+				{
+					"Condition": "6AZs"
+				},
+				{
+					"Condition": "2FgtsPerAZ"
+				}
+			]
+		},
+		"CreateTgwAttachSubnets": {
+			"Fn::Equals": [
+				{
+					"Ref": "TgwAttach"
+				},
+				"Yes"
+			]
+		},
+		"3AZs+AndCreateTgwAttachSubnets": {
+			"Fn::And": [
+				{
+					"Condition": "3AZs+"
+				},
+				{
+					"Condition": "CreateTgwAttachSubnets"
+				}
+			]
+		},
+		"4AZs+AndCreateTgwAttachSubnets": {
+			"Fn::And": [
+				{
+					"Condition": "4AZs+"
+				},
+				{
+					"Condition": "CreateTgwAttachSubnets"
+				}
+			]
+		},
+		"5AZs+AndCreateTgwAttachSubnets": {
+			"Fn::And": [
+				{
+					"Condition": "5AZs+"
+				},
+				{
+					"Condition": "CreateTgwAttachSubnets"
+				}
+			]
+		},
+		"6AZsAndCreateTgwAttachSubnets": {
+			"Fn::And": [
+				{
+					"Condition": "6AZs"
+				},
+				{
+					"Condition": "CreateTgwAttachSubnets"
+				}
+			]
+		},
+		"CreateTgw": {
+			"Fn::Equals": [
+				{
+					"Ref": "TgwCreation"
+				},
+				"Yes"
+			]
+		},
+		"ExistingTGW": {
+			"Fn::Not": [
+				{
+					"Fn::Equals": [
+						{
+							"Ref": "TgwExisting"
+						},
+						""
+					]
+				}
+			]
+		},
+		"CreateAttachments": {
+			"Fn::Or": [
+				{
+					"Condition": "CreateTgw"
+				},
+				{
+					"Condition": "ExistingTGW"
+				}
+			]
+		},
+		"BYOL": {
+			"Fn::Equals": [
+				{
+					"Ref": "LicenseType"
+				},
+				"BYOL"
+			]
+		},
+		"FortiFlex": {
+			"Fn::Equals": [
+				{
+					"Ref": "LicenseType"
+				},
+				"Flex"
+			]
+		},
+		"Graviton": {
+			"Fn::Or": [
+				{
+					"Fn::Equals": [
+						{
+							"Fn::Select": [
+								"0",
+								{
+									"Fn::Split": [
+										".",
+										{
+											"Ref": "InstanceType"
+										}
+									]
+								}
+							]
+						},
+						"c6g"
+					]
+				},
+				{
+					"Fn::Equals": [
+						{
+							"Fn::Select": [
+								"0",
+								{
+									"Fn::Split": [
+										".",
+										{
+											"Ref": "InstanceType"
+										}
+									]
+								}
+							]
+						},
+						"c6gn"
+					]
+				},
+				{
+					"Fn::Equals": [
+						{
+							"Fn::Select": [
+								"0",
+								{
+									"Fn::Split": [
+										".",
+										{
+											"Ref": "InstanceType"
+										}
+									]
+								}
+							]
+						},
+						"c7g"
+					]
+				},
+				{
+					"Fn::Equals": [
+						{
+							"Fn::Select": [
+								"0",
+								{
+									"Fn::Split": [
+										".",
+										{
+											"Ref": "InstanceType"
+										}
+									]
+								}
+							]
+						},
+						"c7gn"
+					]
+				}
+			]
+		}
+	},
+	"Resources": {
+		"VPC": {
+			"Type": "AWS::EC2::VPC",
+			"Properties": {
+				"CidrBlock": {
+					"Ref": "VPCCIDR"
+				},
+				"EnableDnsSupport": "true",
+				"EnableDnsHostnames": "true",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"VPC"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub1": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet1"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub2": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet2"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub3": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "3AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet3"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub4": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "4AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet4"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub5": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "5AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet5"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub6": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "6AZs",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet6"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub1": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet1"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub2": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet2"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub3": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "3AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet3"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub4": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "4AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet4"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub5": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "5AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet5"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub6": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "6AZs",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet6"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub1": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet1"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub2": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet2"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub3": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "3AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet3"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub4": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "4AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet4"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub5": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "5AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet5"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub6": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "6AZs",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet6"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttachSub1": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "CreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "TgwAttachSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttachSubnet1"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttachSub2": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "CreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "TgwAttachSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttachSubnet2"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttachSub3": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "TgwAttachSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttachSubnet3"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttachSub4": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "TgwAttachSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttachSubnet4"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttachSub5": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "TgwAttachSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttachSubnet5"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttachSub6": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "TgwAttachSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttachSubnet6"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"InternetGateway": {
+			"Type": "AWS::EC2::InternetGateway",
+			"Properties": {
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"IGW"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"AttachGateway": {
+			"Type": "AWS::EC2::VPCGatewayAttachment",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"InternetGatewayId": {
+					"Ref": "InternetGateway"
+				}
+			}
+		},
+		"Gwlb": {
+			"Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+			"Properties": {
+				"Name": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"Gwlb"
+						]
+					]
+				},
+				"Type": "gateway",
+				"Subnets": [
+					{
+						"Ref": "GwlbSub1"
+					},
+					{
+						"Ref": "GwlbSub2"
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Ref": "GwlbSub3"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Ref": "GwlbSub4"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Ref": "GwlbSub5"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Ref": "GwlbSub6"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				],
+				"LoadBalancerAttributes": [
+					{
+						"Key": "load_balancing.cross_zone.enabled",
+						"Value": "true"
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Gwlb"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TargetGroup": {
+			"Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+			"Properties": {
+				"Name": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"tg-geneve"
+						]
+					]
+				},
+				"Port": 6081,
+				"Protocol": "GENEVE",
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"HealthCheckPort": "541",
+				"HealthCheckProtocol": "TCP",
+				"TargetType": "instance",
+				"Targets": [
+					{
+						"Id": {
+							"Ref": "Fgt1a"
+						},
+						"Port": 6081
+					},
+					{
+						"Id": {
+							"Ref": "Fgt2a"
+						},
+						"Port": 6081
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Id": {
+									"Ref": "Fgt3a"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Id": {
+									"Ref": "Fgt4a"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Id": {
+									"Ref": "Fgt5a"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Id": {
+									"Ref": "Fgt6a"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"2AZs+And2FgtsPerAZ",
+							{
+								"Id": {
+									"Ref": "Fgt1b"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"2AZs+And2FgtsPerAZ",
+							{
+								"Id": {
+									"Ref": "Fgt2b"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"3AZs+And2FgtsPerAZ",
+							{
+								"Id": {
+									"Ref": "Fgt3b"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+And2FgtsPerAZ",
+							{
+								"Id": {
+									"Ref": "Fgt4b"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+And2FgtsPerAZ",
+							{
+								"Id": {
+									"Ref": "Fgt5b"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZsAnd2FgtsPerAZ",
+							{
+								"Id": {
+									"Ref": "Fgt6b"
+								},
+								"Port": 6081
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"tg-geneve"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Listener": {
+			"Type": "AWS::ElasticLoadBalancingV2::Listener",
+			"Properties": {
+				"DefaultActions": [
+					{
+						"Type": "forward",
+						"TargetGroupArn": {
+							"Ref": "TargetGroup"
+						}
+					}
+				],
+				"LoadBalancerArn": {
+					"Ref": "Gwlb"
+				}
+			}
+		},
+		"VpcEndpointService": {
+			"Type": "AWS::EC2::VPCEndpointService",
+			"Properties": {
+				"AcceptanceRequired": "false",
+				"GatewayLoadBalancerArns": [
+					{
+						"Ref": "Gwlb"
+					}
+				]
+			}
+		},
+		"LambdaRole": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"RoleName": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"LambdaRole"
+						]
+					]
+				},
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Principal": {
+								"Service": [
+									"lambda.amazonaws.com"
+								]
+							},
+							"Action": [
+								"sts:AssumeRole"
+							]
+						}
+					]
+				},
+				"Path": "/",
+				"Policies": [
+					{
+						"PolicyName": "root",
+						"PolicyDocument": {
+							"Version": "2012-10-17",
+							"Statement": [
+								{
+									"Effect": "Allow",
+									"Action": [
+										"ec2:DescribeImages",
+										"ec2:DescribeNetworkInterfaces",
+										"ec2:DescribeTransitGatewayVpcAttachments",
+										"ec2:DescribeVpcEndpointServiceConfigurations",
+										"ec2:DescribeVpcEndpointServicePermissions",
+										"ec2:DescribeVpcEndpointServices",
+										"ec2:ModifyTransitGatewayVpcAttachment",
+										"logs:CreateLogGroup",
+										"logs:CreateLogStream",
+										"logs:PutLogEvents",
+										"s3:PutObject"
+									],
+									"Resource": "*"
+								}
+							]
+						}
+					}
+				]
+			}
+		},
+		"DescribeVpceService": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Handler": "index.handler",
+				"Role": {
+					"Fn::GetAtt": [
+						"LambdaRole",
+						"Arn"
+					]
+				},
+				"Code": {
+					"ZipFile": {
+						"Fn::Join": [
+							"\n",
+							[
+								"import boto3",
+								"import cfnresponse",
+								"import logging",
+								"import json",
+								"logger = logging.getLogger()",
+								"logger.setLevel(logging.INFO)",
+								"ec2 = boto3.client('ec2')",
+								"",
+								"def handler(event, context):",
+								"    if event['RequestType'] == 'Create':",
+								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
+								"    else:",
+								"        responseData = {'msg':'200'}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"        return None",
+								"",
+								"    try:",
+								"        response = ec2.describe_vpc_endpoint_service_configurations(",
+								"                Filters=[",
+								"                    {",
+								"                        'Name': 'service-id',",
+								"                        'Values': [event['ResourceProperties']['VpceServiceId']]",
+								"                    }",
+								"                ]",
+								"            )",
+								"    except Exception as error:",
+								"        logger.error('<--!! Exception: {}'.format(error))",
+								"        responseData = {'msg':'Exception: {}'.format(error)}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								"",
+								"    if response['ResponseMetadata']['HTTPStatusCode'] == 200 and response['ServiceConfigurations'] != []:",
+								"        service_name = response['ServiceConfigurations'][0]['ServiceName']",
+								"        logger.info('--> found vpce service name: {}'.format(service_name))",
+								"        responseData = {'ServiceName': service_name}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"    else:",
+								"        logger.error('!!--> Unable to find vpce service name in response! {}'.format(response))",
+								"        responseData = {'msg':'error'}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								""
+							]
+						]
+					}
+				},
+				"Runtime": "python3.9",
+				"Timeout": 150
+			}
+		},
+		"RunDescribeVpceService": {
+			"Type": "Custom::DescribeVpceService",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeVpceService",
+						"Arn"
+					]
+				},
+				"VpceServiceId": {
+					"Ref": "VpcEndpointService"
+				}
+			}
+		},
+		"GwlbEndpoint1": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"DependsOn": [
+				"Gwlb",
+				"RunDescribeVpceService"
+			],
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Fn::GetAtt": [
+						"RunDescribeVpceService",
+						"ServiceName"
+					]
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub1"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint2": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"DependsOn": [
+				"Gwlb",
+				"RunDescribeVpceService"
+			],
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Fn::GetAtt": [
+						"RunDescribeVpceService",
+						"ServiceName"
+					]
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub2"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint3": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "3AZs+",
+			"DependsOn": [
+				"Gwlb",
+				"RunDescribeVpceService"
+			],
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Fn::GetAtt": [
+						"RunDescribeVpceService",
+						"ServiceName"
+					]
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub3"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint4": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "4AZs+",
+			"DependsOn": [
+				"Gwlb",
+				"RunDescribeVpceService"
+			],
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Fn::GetAtt": [
+						"RunDescribeVpceService",
+						"ServiceName"
+					]
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub4"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint5": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "5AZs+",
+			"DependsOn": [
+				"Gwlb",
+				"RunDescribeVpceService"
+			],
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Fn::GetAtt": [
+						"RunDescribeVpceService",
+						"ServiceName"
+					]
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub5"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint6": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "6AZs",
+			"DependsOn": [
+				"Gwlb",
+				"RunDescribeVpceService"
+			],
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Fn::GetAtt": [
+						"RunDescribeVpceService",
+						"ServiceName"
+					]
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub6"
+					}
+				]
+			}
+		},
+		"DescribeGwlbEni": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Handler": "index.handler",
+				"Role": {
+					"Fn::GetAtt": [
+						"LambdaRole",
+						"Arn"
+					]
+				},
+				"Code": {
+					"ZipFile": {
+						"Fn::Join": [
+							"\n",
+							[
+								"import boto3",
+								"import cfnresponse",
+								"import logging",
+								"import json",
+								"logger = logging.getLogger()",
+								"logger.setLevel(logging.INFO)",
+								"ec2 = boto3.client('ec2')",
+								"",
+								"def handler(event, context):",
+								"",
+								"    if event['RequestType'] == 'Create':",
+								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
+								"        gwlb_ips = []",
+								"    else:",
+								"        responseData = {'msg':'200'}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"        return None",
+								"",
+								"    for subnet in event['ResourceProperties']['Subnets']:",
+								"        try:",
+								"            response = ec2.describe_network_interfaces(",
+								"                    Filters=[",
+								"                        {",
+								"                            'Name': 'description',",
+								"                            'Values': [event['ResourceProperties']['GwlbName']]",
+								"                        },",
+								"                        {",
+								"                            'Name': 'subnet-id',",
+								"                            'Values': [subnet]",
+								"                        }",
+								"                    ]",
+								"                )",
+								"        except Exception as error:",
+								"            logger.error('<--!! Exception: {}'.format(error))",
+								"            responseData = {'msg':'Exception: {}'.format(error)}",
+								"            cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								"            return None",
+								"    ",
+								"        if response['ResponseMetadata']['HTTPStatusCode'] == 200 and response['NetworkInterfaces'] != []:",
+								"            gwlb_ips.append(response['NetworkInterfaces'][0]['PrivateIpAddress'])",
+								"            logger.info('--> found Gwlb IP for subnet {}: {}'.format(subnet, response['NetworkInterfaces'][0]['PrivateIpAddress']))",
+								"        else:",
+								"            logger.error('!!--> Unable to Gwlb IP for subnet {} in response! {}'.format(subnet, response))",
+								"",
+								"    if len(gwlb_ips) != 0:",
+								"        responseData = {'gwlb_ips':gwlb_ips}",
+								"        logger.info('--> Returning these Gwlb IPs: {}'.format(responseData))",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"    else:",
+								"        responseData = {'msg':'error'}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								""
+							]
+						]
+					}
+				},
+				"Runtime": "python3.9",
+				"Timeout": 150
+			}
+		},
+		"RunDescribeGwlbEni": {
+			"Type": "Custom::DescribeGwlbEni",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeGwlbEni",
+						"Arn"
+					]
+				},
+				"GwlbName": {
+					"Fn::Join": [
+						"",
+						[
+							"*",
+							{
+								"Fn::GetAtt": [
+									"Gwlb",
+									"LoadBalancerFullName"
+								]
+							}
+						]
+					]
+				},
+				"Subnets": [
+					{
+						"Ref": "GwlbSub1"
+					},
+					{
+						"Ref": "GwlbSub2"
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Ref": "GwlbSub3"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Ref": "GwlbSub4"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Ref": "GwlbSub5"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Ref": "GwlbSub6"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				]
+			}
+		},
+		"TransitGateway": {
+			"Type": "AWS::EC2::TransitGateway",
+			"Condition": "CreateTgw",
+			"Properties": {
+				"AmazonSideAsn": 64512,
+				"AutoAcceptSharedAttachments": "enable",
+				"DefaultRouteTableAssociation": "disable",
+				"DefaultRouteTablePropagation": "disable",
+				"DnsSupport": "enable",
+				"VpnEcmpSupport": "enable",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TGW"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TransitGatewaySecurityVpcAttachment": {
+			"Type": "AWS::EC2::TransitGatewayAttachment",
+			"Condition": "CreateTgw",
+			"Properties": {
+				"SubnetIds": [
+					{
+						"Ref": "TgwAttachSub1"
+					},
+					{
+						"Ref": "TgwAttachSub2"
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Ref": "TgwAttachSub3"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Ref": "TgwAttachSub4"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Ref": "TgwAttachSub5"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Ref": "TgwAttachSub6"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				],
+				"TransitGatewayId": {
+					"Ref": "TransitGateway"
+				},
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"security-vpc-attachment"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TransitGatewaySecurityRtb": {
+			"Type": "AWS::EC2::TransitGatewayRouteTable",
+			"Condition": "CreateTgw",
+			"Properties": {
+				"TransitGatewayId": {
+					"Ref": "TransitGateway"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"security-tgw-rtb"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TransitGatewaySpokeRtb": {
+			"Type": "AWS::EC2::TransitGatewayRouteTable",
+			"Condition": "CreateTgw",
+			"Properties": {
+				"TransitGatewayId": {
+					"Ref": "TransitGateway"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"spoke-tgw-rtb"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TransitGatewaySecurityVpcAttachmentAssociation": {
+			"Type": "AWS::EC2::TransitGatewayRouteTableAssociation",
+			"Condition": "CreateTgw",
+			"Properties": {
+				"TransitGatewayAttachmentId": {
+					"Ref": "TransitGatewaySecurityVpcAttachment"
+				},
+				"TransitGatewayRouteTableId": {
+					"Ref": "TransitGatewaySecurityRtb"
+				}
+			}
+		},
+		"TransitGatewayRoute1": {
+			"Type": "AWS::EC2::TransitGatewayRoute",
+			"Condition": "CreateTgw",
+			"Properties": {
+				"TransitGatewayAttachmentId": {
+					"Ref": "TransitGatewaySecurityVpcAttachment"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"TransitGatewayRouteTableId": {
+					"Ref": "TransitGatewaySpokeRtb"
+				}
+			}
+		},
+		"PublicRouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicRouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateRouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateRouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbRouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbRouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttach1RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "CreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttach1RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttach2RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "CreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttach2RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttach3RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttach3RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttach4RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttach4RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttach5RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttach5RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TgwAttach6RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"TgwAttach6RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Route1": {
+			"Type": "AWS::EC2::Route",
+			"DependsOn": "AttachGateway",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "PublicRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"GatewayId": {
+					"Ref": "InternetGateway"
+				}
+			}
+		},
+		"Route2": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "CreateTgw",
+			"DependsOn": [
+				"TransitGateway",
+				"TransitGatewaySecurityVpcAttachment",
+				"TransitGatewaySecurityVpcAttachmentAssociation"
+			],
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"TransitGatewayId": {
+					"Ref": "TransitGateway"
+				}
+			}
+		},
+		"Route3": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "CreateTgw",
+			"DependsOn": [
+				"TransitGateway",
+				"TransitGatewaySecurityVpcAttachment",
+				"TransitGatewaySecurityVpcAttachmentAssociation"
+			],
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"TransitGatewayId": {
+					"Ref": "TransitGateway"
+				}
+			}
+		},
+		"Route4": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "CreateTgwAttachSubnets",
+			"DependsOn": "GwlbEndpoint1",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "TgwAttach1RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint1"
+				}
+			}
+		},
+		"Route5": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "CreateTgwAttachSubnets",
+			"DependsOn": "GwlbEndpoint2",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "TgwAttach2RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint2"
+				}
+			}
+		},
+		"Route6": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"DependsOn": "GwlbEndpoint3",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "TgwAttach3RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint3"
+				}
+			}
+		},
+		"Route7": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"DependsOn": "GwlbEndpoint4",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "TgwAttach4RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint4"
+				}
+			}
+		},
+		"Route8": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"DependsOn": "GwlbEndpoint5",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "TgwAttach5RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint5"
+				}
+			}
+		},
+		"Route9": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"DependsOn": "GwlbEndpoint6",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "TgwAttach6RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint6"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc1": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub1"
+				},
+				"RouteTableId": {
+					"Ref": "PublicRouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub2"
+				},
+				"RouteTableId": {
+					"Ref": "PublicRouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc3": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "3AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub3"
+				},
+				"RouteTableId": {
+					"Ref": "PublicRouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc4": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "4AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub4"
+				},
+				"RouteTableId": {
+					"Ref": "PublicRouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc5": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "5AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub5"
+				},
+				"RouteTableId": {
+					"Ref": "PublicRouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc6": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "6AZs",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub6"
+				},
+				"RouteTableId": {
+					"Ref": "PublicRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc1": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub1"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub2"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc3": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "3AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub3"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc4": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "4AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub4"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc5": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "5AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub5"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc6": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "6AZs",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub6"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc1": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub1"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub2"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc3": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "3AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub3"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc4": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "4AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub4"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc5": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "5AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub5"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc6": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "6AZs",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub6"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"TgwAttachSubnetRouteTableAssoc1": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "CreateTgwAttachSubnets",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "TgwAttachSub1"
+				},
+				"RouteTableId": {
+					"Ref": "TgwAttach1RouteTable"
+				}
+			}
+		},
+		"TgwAttachSubnetRouteTableAssoc2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "CreateTgwAttachSubnets",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "TgwAttachSub2"
+				},
+				"RouteTableId": {
+					"Ref": "TgwAttach2RouteTable"
+				}
+			}
+		},
+		"TgwAttachSubnetRouteTableAssoc3": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "TgwAttachSub3"
+				},
+				"RouteTableId": {
+					"Ref": "TgwAttach3RouteTable"
+				}
+			}
+		},
+		"TgwAttachSubnetRouteTableAssoc4": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "TgwAttachSub4"
+				},
+				"RouteTableId": {
+					"Ref": "TgwAttach4RouteTable"
+				}
+			}
+		},
+		"TgwAttachSubnetRouteTableAssoc5": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "TgwAttachSub5"
+				},
+				"RouteTableId": {
+					"Ref": "TgwAttach5RouteTable"
+				}
+			}
+		},
+		"TgwAttachSubnetRouteTableAssoc6": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "TgwAttachSub6"
+				},
+				"RouteTableId": {
+					"Ref": "TgwAttach6RouteTable"
+				}
+			}
+		},
+		"TgwApplianceMode": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Handler": "index.handler",
+				"Role": {
+					"Fn::GetAtt": [
+						"LambdaRole",
+						"Arn"
+					]
+				},
+				"Code": {
+					"ZipFile": {
+						"Fn::Join": [
+							"\n",
+							[
+								"import boto3",
+								"import cfnresponse",
+								"import logging",
+								"import json",
+								"logger = logging.getLogger()",
+								"logger.setLevel(logging.INFO)",
+								"ec2 = boto3.client('ec2')",
+								"",
+								"def handler(event, context):",
+								"    if event['RequestType'] == 'Create':",
+								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
+								"    else:",
+								"        responseData = {'msg':'200'}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"        return None",
+								"",
+								"    try:",
+								"        response = ec2.modify_transit_gateway_vpc_attachment(",
+								"                TransitGatewayAttachmentId = event['ResourceProperties']['TgwInspectionVpcAttachmentId'],",
+								"                Options = {'ApplianceModeSupport': event['ResourceProperties']['ApplianceMode']}",
+								"            )",
+								"    except Exception as error:",
+								"        logger.error('<--!! Exception: {}'.format(error))",
+								"        responseData = {'msg':'Exception: {}'.format(error)}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								"",
+								"    if response['ResponseMetadata']['HTTPStatusCode'] == 200 and response['TransitGatewayVpcAttachment'] != []:",
+								"        tgw_status = response['TransitGatewayVpcAttachment']['Options']['ApplianceModeSupport']",
+								"        logger.info('--> Current Tgw Status: {}'.format(tgw_status))",
+								"        responseData = {'Tgw ApplianceMode Status': tgw_status}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"    else:",
+								"        logger.error('!!--> Unable to modify Tgw Attachment! {}'.format(response))",
+								"        responseData = {'msg':'error'}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								""
+							]
+						]
+					}
+				},
+				"Runtime": "python3.9",
+				"Timeout": 30
+			}
+		},
+		"RunTgwApplianceMode": {
+			"Type": "Custom::RunTgwApplianceMode",
+			"Condition": "CreateTgw",
+			"DependsOn": "TransitGatewayRoute1",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"TgwApplianceMode",
+						"Arn"
+					]
+				},
+				"TgwInspectionVpcAttachmentId": {
+					"Ref": "TransitGatewaySecurityVpcAttachment"
+				},
+				"ApplianceMode": "enable"
+			}
+		},
+		"RunTgwApplianceModeExisting": {
+			"Type": "Custom::RunTgwApplianceMode",
+			"Condition": "ExistingTGW",
+			"DependsOn": "ExistingTransitGatewayRoute1",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"TgwApplianceMode",
+						"Arn"
+					]
+				},
+				"TgwInspectionVpcAttachmentId": {
+					"Ref": "TransitGatewaySecurityVpcAttachment"
+				},
+				"ApplianceMode": "enable"
+			}
+		},
+		"ExistingTransitGatewaySecurityVpcAttachment": {
+			"Type": "AWS::EC2::TransitGatewayAttachment",
+			"Condition": "ExistingTGW",
+			"Properties": {
+				"SubnetIds": [
+					{
+						"Ref": "TgwAttachSub1"
+					},
+					{
+						"Ref": "TgwAttachSub2"
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Ref": "TgwAttachSub3"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Ref": "TgwAttachSub4"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Ref": "TgwAttachSub5"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Ref": "TgwAttachSub6"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				],
+				"TransitGatewayId": {
+					"Ref": "TgwExisting"
+				},
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"security-vpc-attachment"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"ExistingTransitGatewaySecurityVpcAttachmentAssociation": {
+			"Type": "AWS::EC2::TransitGatewayRouteTableAssociation",
+			"Condition": "ExistingTGW",
+			"Properties": {
+				"TransitGatewayAttachmentId": {
+					"Ref": "ExistingTransitGatewaySecurityVpcAttachment"
+				},
+				"TransitGatewayRouteTableId": {
+					"Ref": "TgwExistingSecurityTgwRtb"
+				}
+			}
+		},
+		"ExistingTransitGatewayRoute1": {
+			"Type": "AWS::EC2::TransitGatewayRoute",
+			"Condition": "ExistingTGW",
+			"Properties": {
+				"TransitGatewayAttachmentId": {
+					"Ref": "ExistingTransitGatewaySecurityVpcAttachment"
+				},
+				"DestinationCidrBlock": {
+					"Ref": "TgwExistingSpokeTgwRtbRoute"
+				},
+				"TransitGatewayRouteTableId": {
+					"Ref": "TgwExistingSpokeTgwRtb"
+				}
+			}
+		},
+		"ExistingRoute1": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "ExistingTGW",
+			"DependsOn": [
+				"ExistingTransitGatewaySecurityVpcAttachment",
+				"ExistingTransitGatewaySecurityVpcAttachmentAssociation"
+			],
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"TransitGatewayId": {
+					"Ref": "TgwExisting"
+				}
+			}
+		},
+		"InstanceRole": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Principal": {
+								"Service": [
+									"ec2.amazonaws.com"
+								]
+							},
+							"Action": [
+								"sts:AssumeRole"
+							]
+						}
+					]
+				},
+				"Path": "/",
+				"Policies": [
+					{
+						"PolicyName": "FGCPPolicy",
+						"PolicyDocument": {
+							"Version": "2012-10-17",
+							"Statement": [
+								{
+									"Sid": "BootStrapFromS3",
+									"Effect": "Allow",
+									"Action": [
+										"s3:GetObject"
+									],
+									"Resource": "*"
+								},
+								{
+									"Sid": "SDNConnectorFortiView",
+									"Effect": "Allow",
+									"Action": [
+										"ec2:DescribeRegions",
+										"ec2:DescribeInstances",
+										"eks:DescribeCluster",
+										"eks:ListClusters",
+										"inspector:DescribeFindings",
+										"inspector:ListFindings"
+									],
+									"Resource": "*"
+								}
+							]
+						}
+					}
+				]
+			}
+		},
+		"InstanceProfile": {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/",
+				"Roles": [
+					{
+						"Ref": "InstanceRole"
+					}
+				]
+			}
+		},
+		"FortiGateSecGrp": {
+			"Type": "AWS::EC2::SecurityGroup",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"GroupDescription": "FortigateSecGrp",
+				"SecurityGroupIngress": [
+					{
+						"Description": "Allow remote access to FGT",
+						"IpProtocol": "-1",
+						"FromPort": "0",
+						"ToPort": "65535",
+						"CidrIp": {
+							"Ref": "CIDRForInstanceAccess"
+						}
+					},
+					{
+						"Description": "Allow local VPC access to FGT",
+						"IpProtocol": "-1",
+						"FromPort": "0",
+						"ToPort": "65535",
+						"CidrIp": {
+							"Ref": "VPCCIDR"
+						}
+					}
+				]
+			}
+		},
+		"FortiGateLaunchTemplate1": {
+			"Type": "AWS::EC2::LaunchTemplate",
+			"Properties": {
+				"LaunchTemplateName": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"fgt-lt",
+							{
+								"Fn::Select": [
+									"0",
+									{
+										"Ref": "AZs"
+									}
+								]
+							}
+						]
+					]
+				},
+				"LaunchTemplateData": {
+					"ImageId": {
+						"Fn::GetAtt": [
+							"RunImageFunction",
+							"ami"
+						]
+					},
+					"InstanceType": {
+						"Ref": "InstanceType"
+					},
+					"IamInstanceProfile": {
+						"Arn": {
+							"Fn::GetAtt": [
+								"InstanceProfile",
+								"Arn"
+							]
+						}
+					},
+					"KeyName": {
+						"Ref": "KeyPair"
+					},
+					"BlockDeviceMappings": [
+						{
+							"DeviceName": "/dev/sda1",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "2",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						},
+						{
+							"DeviceName": "/dev/sdb",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "30",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						}
+					],
+					"NetworkInterfaces": [
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port1",
+							"DeviceIndex": "0",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PublicSub1"
+							}
+						},
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port2",
+							"DeviceIndex": "1",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PrivateSub1"
+							}
+						}
+					],
+					"TagSpecifications": [
+						{
+							"ResourceType": "network-interface",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"0",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						},
+						{
+							"ResourceType": "volume",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"0",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"FortiGateLaunchTemplate2": {
+			"Type": "AWS::EC2::LaunchTemplate",
+			"Properties": {
+				"LaunchTemplateName": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"fgt-lt",
+							{
+								"Fn::Select": [
+									"1",
+									{
+										"Ref": "AZs"
+									}
+								]
+							}
+						]
+					]
+				},
+				"LaunchTemplateData": {
+					"ImageId": {
+						"Fn::GetAtt": [
+							"RunImageFunction",
+							"ami"
+						]
+					},
+					"InstanceType": {
+						"Ref": "InstanceType"
+					},
+					"IamInstanceProfile": {
+						"Arn": {
+							"Fn::GetAtt": [
+								"InstanceProfile",
+								"Arn"
+							]
+						}
+					},
+					"KeyName": {
+						"Ref": "KeyPair"
+					},
+					"BlockDeviceMappings": [
+						{
+							"DeviceName": "/dev/sda1",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "2",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						},
+						{
+							"DeviceName": "/dev/sdb",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "30",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						}
+					],
+					"NetworkInterfaces": [
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port1",
+							"DeviceIndex": "0",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PublicSub2"
+							}
+						},
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port2",
+							"DeviceIndex": "1",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PrivateSub2"
+							}
+						}
+					],
+					"TagSpecifications": [
+						{
+							"ResourceType": "network-interface",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"1",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						},
+						{
+							"ResourceType": "volume",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"1",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"FortiGateLaunchTemplate3": {
+			"Type": "AWS::EC2::LaunchTemplate",
+			"Condition": "3AZs+",
+			"Properties": {
+				"LaunchTemplateName": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"fgt-lt",
+							{
+								"Fn::Select": [
+									"2",
+									{
+										"Ref": "AZs"
+									}
+								]
+							}
+						]
+					]
+				},
+				"LaunchTemplateData": {
+					"ImageId": {
+						"Fn::GetAtt": [
+							"RunImageFunction",
+							"ami"
+						]
+					},
+					"InstanceType": {
+						"Ref": "InstanceType"
+					},
+					"IamInstanceProfile": {
+						"Arn": {
+							"Fn::GetAtt": [
+								"InstanceProfile",
+								"Arn"
+							]
+						}
+					},
+					"KeyName": {
+						"Ref": "KeyPair"
+					},
+					"BlockDeviceMappings": [
+						{
+							"DeviceName": "/dev/sda1",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "2",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						},
+						{
+							"DeviceName": "/dev/sdb",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "30",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						}
+					],
+					"NetworkInterfaces": [
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port1",
+							"DeviceIndex": "0",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PublicSub3"
+							}
+						},
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port2",
+							"DeviceIndex": "1",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PrivateSub3"
+							}
+						}
+					],
+					"TagSpecifications": [
+						{
+							"ResourceType": "network-interface",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"2",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						},
+						{
+							"ResourceType": "volume",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"2",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"FortiGateLaunchTemplate4": {
+			"Type": "AWS::EC2::LaunchTemplate",
+			"Condition": "4AZs+",
+			"Properties": {
+				"LaunchTemplateName": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"fgt-lt",
+							{
+								"Fn::Select": [
+									"3",
+									{
+										"Ref": "AZs"
+									}
+								]
+							}
+						]
+					]
+				},
+				"LaunchTemplateData": {
+					"ImageId": {
+						"Fn::GetAtt": [
+							"RunImageFunction",
+							"ami"
+						]
+					},
+					"InstanceType": {
+						"Ref": "InstanceType"
+					},
+					"IamInstanceProfile": {
+						"Arn": {
+							"Fn::GetAtt": [
+								"InstanceProfile",
+								"Arn"
+							]
+						}
+					},
+					"KeyName": {
+						"Ref": "KeyPair"
+					},
+					"BlockDeviceMappings": [
+						{
+							"DeviceName": "/dev/sda1",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "2",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						},
+						{
+							"DeviceName": "/dev/sdb",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "30",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						}
+					],
+					"NetworkInterfaces": [
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port1",
+							"DeviceIndex": "0",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PublicSub4"
+							}
+						},
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port2",
+							"DeviceIndex": "1",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PrivateSub4"
+							}
+						}
+					],
+					"TagSpecifications": [
+						{
+							"ResourceType": "network-interface",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"3",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						},
+						{
+							"ResourceType": "volume",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"3",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"FortiGateLaunchTemplate5": {
+			"Type": "AWS::EC2::LaunchTemplate",
+			"Condition": "5AZs+",
+			"Properties": {
+				"LaunchTemplateName": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"fgt-lt",
+							{
+								"Fn::Select": [
+									"4",
+									{
+										"Ref": "AZs"
+									}
+								]
+							}
+						]
+					]
+				},
+				"LaunchTemplateData": {
+					"ImageId": {
+						"Fn::GetAtt": [
+							"RunImageFunction",
+							"ami"
+						]
+					},
+					"InstanceType": {
+						"Ref": "InstanceType"
+					},
+					"IamInstanceProfile": {
+						"Arn": {
+							"Fn::GetAtt": [
+								"InstanceProfile",
+								"Arn"
+							]
+						}
+					},
+					"KeyName": {
+						"Ref": "KeyPair"
+					},
+					"BlockDeviceMappings": [
+						{
+							"DeviceName": "/dev/sda1",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "2",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						},
+						{
+							"DeviceName": "/dev/sdb",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "30",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						}
+					],
+					"NetworkInterfaces": [
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port1",
+							"DeviceIndex": "0",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PublicSub5"
+							}
+						},
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port2",
+							"DeviceIndex": "1",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PrivateSub5"
+							}
+						}
+					],
+					"TagSpecifications": [
+						{
+							"ResourceType": "network-interface",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"4",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						},
+						{
+							"ResourceType": "volume",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"4",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"FortiGateLaunchTemplate6": {
+			"Type": "AWS::EC2::LaunchTemplate",
+			"Condition": "6AZs",
+			"Properties": {
+				"LaunchTemplateName": {
+					"Fn::Join": [
+						"-",
+						[
+							{
+								"Ref": "AWS::StackName"
+							},
+							"fgt-lt",
+							{
+								"Fn::Select": [
+									"5",
+									{
+										"Ref": "AZs"
+									}
+								]
+							}
+						]
+					]
+				},
+				"LaunchTemplateData": {
+					"ImageId": {
+						"Fn::GetAtt": [
+							"RunImageFunction",
+							"ami"
+						]
+					},
+					"InstanceType": {
+						"Ref": "InstanceType"
+					},
+					"IamInstanceProfile": {
+						"Arn": {
+							"Fn::GetAtt": [
+								"InstanceProfile",
+								"Arn"
+							]
+						}
+					},
+					"KeyName": {
+						"Ref": "KeyPair"
+					},
+					"BlockDeviceMappings": [
+						{
+							"DeviceName": "/dev/sda1",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "2",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						},
+						{
+							"DeviceName": "/dev/sdb",
+							"Ebs": {
+								"VolumeType": "gp2",
+								"VolumeSize": "30",
+								"DeleteOnTermination": "true",
+								"Encrypted": {
+									"Ref": "EncryptVolumes"
+								}
+							}
+						}
+					],
+					"NetworkInterfaces": [
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port1",
+							"DeviceIndex": "0",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PublicSub6"
+							}
+						},
+						{
+							"DeleteOnTermination": "true",
+							"Description": "port2",
+							"DeviceIndex": "1",
+							"Groups": [
+								{
+									"Ref": "FortiGateSecGrp"
+								}
+							],
+							"SubnetId": {
+								"Ref": "PrivateSub6"
+							}
+						}
+					],
+					"TagSpecifications": [
+						{
+							"ResourceType": "network-interface",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"5",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						},
+						{
+							"ResourceType": "volume",
+							"Tags": [
+								{
+									"Key": "Name",
+									"Value": {
+										"Fn::Join": [
+											"-",
+											[
+												{
+													"Ref": "AWS::StackName"
+												},
+												"Fgt",
+												{
+													"Fn::Select": [
+														"5",
+														{
+															"Ref": "AZs"
+														}
+													]
+												}
+											]
+										]
+									}
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"Fgt1a": {
+			"Type": "AWS::EC2::Instance",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate1"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate1",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt1a",
+									{
+										"Fn::Select": [
+											"0",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"0",
+												{
+													"Ref": "LicenseFilesFor1stFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt1a-",
+													{
+														"Fn::Select": [
+															"0",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"0",
+																				{
+																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt2a": {
+			"Type": "AWS::EC2::Instance",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate2"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate2",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt2a",
+									{
+										"Fn::Select": [
+											"1",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"1",
+												{
+													"Ref": "LicenseFilesFor1stFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt2a-",
+													{
+														"Fn::Select": [
+															"1",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"1",
+																				{
+																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt3a": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "3AZs+",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate3"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate3",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt3a",
+									{
+										"Fn::Select": [
+											"2",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"2",
+												{
+													"Ref": "LicenseFilesFor1stFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt3a-",
+													{
+														"Fn::Select": [
+															"2",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"2",
+																				{
+																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt4a": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "4AZs+",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate4"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate4",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt4a",
+									{
+										"Fn::Select": [
+											"3",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"3",
+												{
+													"Ref": "LicenseFilesFor1stFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt4a-",
+													{
+														"Fn::Select": [
+															"3",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"3",
+																				{
+																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt5a": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "5AZs+",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate5"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate5",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt5a",
+									{
+										"Fn::Select": [
+											"4",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"4",
+												{
+													"Ref": "LicenseFilesFor1stFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt5a-",
+													{
+														"Fn::Select": [
+															"4",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"4",
+																				{
+																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt6a": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "6AZs",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate6"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate6",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt6a",
+									{
+										"Fn::Select": [
+											"5",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"5",
+												{
+													"Ref": "LicenseFilesFor1stFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt6a-",
+													{
+														"Fn::Select": [
+															"5",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"5",
+																				{
+																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt1b": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate1"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate1",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt1b",
+									{
+										"Fn::Select": [
+											"0",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"0",
+												{
+													"Ref": "LicenseFilesFor2ndFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt1b-",
+													{
+														"Fn::Select": [
+															"0",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"0",
+																				{
+																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt2b": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate2"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate2",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt2b",
+									{
+										"Fn::Select": [
+											"1",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"1",
+												{
+													"Ref": "LicenseFilesFor2ndFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt2b-",
+													{
+														"Fn::Select": [
+															"1",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"1",
+																				{
+																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt3b": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "3AZs+And2FgtsPerAZ",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate3"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate3",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt3b",
+									{
+										"Fn::Select": [
+											"2",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"2",
+												{
+													"Ref": "LicenseFilesFor2ndFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt3b-",
+													{
+														"Fn::Select": [
+															"2",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"2",
+																				{
+																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt4b": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "4AZs+And2FgtsPerAZ",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate4"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate4",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt4b",
+									{
+										"Fn::Select": [
+											"3",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"3",
+												{
+													"Ref": "LicenseFilesFor2ndFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt4b-",
+													{
+														"Fn::Select": [
+															"3",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"3",
+																				{
+																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt5b": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "5AZs+And2FgtsPerAZ",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate5"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate5",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt5b",
+									{
+										"Fn::Select": [
+											"4",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"4",
+												{
+													"Ref": "LicenseFilesFor2ndFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt5b-",
+													{
+														"Fn::Select": [
+															"4",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"4",
+																				{
+																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt6b": {
+			"Type": "AWS::EC2::Instance",
+			"Condition": "6AZsAnd2FgtsPerAZ",
+			"Properties": {
+				"LaunchTemplate": {
+					"LaunchTemplateId": {
+						"Ref": "FortiGateLaunchTemplate6"
+					},
+					"Version": {
+						"Fn::GetAtt": [
+							"FortiGateLaunchTemplate6",
+							"LatestVersionNumber"
+						]
+					}
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt6b",
+									{
+										"Fn::Select": [
+											"5",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				],
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::If": [
+							"BYOL",
+							{
+								"Fn::Join": [
+									"",
+									[
+										"{\n",
+										"\"bucket\"",
+										" : \"",
+										{
+											"Ref": "InitS3Bucket"
+										},
+										"\"",
+										",\n",
+										"\"region\"",
+										" : ",
+										"\"",
+										{
+											"Ref": "AWS::Region"
+										},
+										"\"",
+										",\n",
+										"\"license\"",
+										" : ",
+										"\"",
+										"/",
+										{
+											"Fn::Select": [
+												"5",
+												{
+													"Ref": "LicenseFilesFor2ndFgtPerAZ"
+												}
+											]
+										},
+										"\"",
+										",\n",
+										"\"config\"",
+										" : ",
+										"\"",
+										"/fgt-config.txt\"",
+										"\n",
+										"}"
+									]
+								]
+							},
+							{
+								"Fn::Join": [
+									"\n",
+									[
+										"Content-Type: multipart/mixed; boundary='==Boundary=='",
+										"MIME-Version: 1.0",
+										"",
+										"--==Boundary==",
+										"Content-Type: text/x-shellscript; charset='us-ascii'",
+										"MIME-Version: 1.0",
+										"",
+										{
+											"Fn::GetAtt": [
+												"RunInitFunction",
+												"fgt_config"
+											]
+										},
+										"config system global",
+										{
+											"Fn::Join": [
+												"",
+												[
+													"set hostname ",
+													{
+														"Ref": "AWS::StackName"
+													},
+													"-Fgt6b-",
+													{
+														"Fn::Select": [
+															"5",
+															{
+																"Ref": "AZs"
+															}
+														]
+													}
+												]
+											]
+										},
+										"end",
+										"",
+										{
+											"Fn::If": [
+												"FortiFlex",
+												{
+													"Fn::Join": [
+														"\n",
+														[
+															"--==Boundary==",
+															"Content-Type: text/plain; charset='us-ascii'",
+															"MIME-Version: 1.0",
+															"Content-Transfer-Encoding: 7bit",
+															"Content-Disposition: attachment; filename='license'",
+															"",
+															{
+																"Fn::Join": [
+																	"",
+																	[
+																		"LICENSE-TOKEN: ",
+																		{
+																			"Fn::Select": [
+																				"5",
+																				{
+																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
+																				}
+																			]
+																		}
+																	]
+																]
+															},
+															""
+														]
+													]
+												},
+												{
+													"Ref": "AWS::NoValue"
+												}
+											]
+										},
+										"--==Boundary==--"
+									]
+								]
+							}
+						]
+					}
+				}
+			}
+		},
+		"Fgt1aEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt1a",
+									{
+										"Fn::Select": [
+											"0",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt2aEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt2a",
+									{
+										"Fn::Select": [
+											"1",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt3aEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "3AZs+",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt3a",
+									{
+										"Fn::Select": [
+											"2",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt4aEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "4AZs+",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt4a",
+									{
+										"Fn::Select": [
+											"3",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt5aEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "5AZs+",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt5a",
+									{
+										"Fn::Select": [
+											"4",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt6aEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "6AZs",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt6a",
+									{
+										"Fn::Select": [
+											"5",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt1bEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt1b",
+									{
+										"Fn::Select": [
+											"0",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt2bEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt2b",
+									{
+										"Fn::Select": [
+											"1",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt3bEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "3AZs+And2FgtsPerAZ",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt3b",
+									{
+										"Fn::Select": [
+											"2",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt4bEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "4AZs+And2FgtsPerAZ",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt4b",
+									{
+										"Fn::Select": [
+											"3",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt5bEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "5AZs+And2FgtsPerAZ",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt5b",
+									{
+										"Fn::Select": [
+											"4",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt6bEIP": {
+			"Type": "AWS::EC2::EIP",
+			"Condition": "6AZsAnd2FgtsPerAZ",
+			"Properties": {
+				"Domain": "vpc",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Fgt6b",
+									{
+										"Fn::Select": [
+											"5",
+											{
+												"Ref": "AZs"
+											}
+										]
+									}
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Fgt1aEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt1aEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt1aEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt2aEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt2aEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt2aEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt3aEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "3AZs+",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt3aEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt3aEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt4aEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "4AZs+",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt4aEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt4aEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt5aEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "5AZs+",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt5aEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt5aEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt6aEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "6AZs",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt6aEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt6aEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt1bEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt1bEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt1bEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt2bEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt2bEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt2bEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt3bEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "3AZs+And2FgtsPerAZ",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt3bEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt3bEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt4bEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "4AZs+And2FgtsPerAZ",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt4bEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt4bEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt5bEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "5AZs+And2FgtsPerAZ",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt5bEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt5bEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"Fgt6bEIPASSOCIATION": {
+			"Type": "AWS::EC2::EIPAssociation",
+			"Condition": "6AZsAnd2FgtsPerAZ",
+			"Properties": {
+				"AllocationId": {
+					"Fn::GetAtt": [
+						"Fgt6bEIP",
+						"AllocationId"
+					]
+				},
+				"NetworkInterfaceId": {
+					"Fn::GetAtt": [
+						"RunDescribeFgt6bEni",
+						"fgt_eni"
+					]
+				}
+			}
+		},
+		"DescribeFgtEni": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Handler": "index.handler",
+				"Role": {
+					"Fn::GetAtt": [
+						"LambdaRole",
+						"Arn"
+					]
+				},
+				"Code": {
+					"ZipFile": {
+						"Fn::Join": [
+							"\n",
+							[
+								"import boto3",
+								"import cfnresponse",
+								"import logging",
+								"import json",
+								"logger = logging.getLogger()",
+								"logger.setLevel(logging.INFO)",
+								"ec2 = boto3.client('ec2')",
+								"",
+								"def handler(event, context):",
+								"",
+								"    if event['RequestType'] == 'Create':",
+								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
+								"    else:",
+								"        responseData = {'msg':'200'}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"        return None",
+								"",
+								"    try:",
+								"        response = ec2.describe_network_interfaces(",
+								"                Filters=[",
+								"                    {",
+								"                        'Name': 'attachment.instance-id',",
+								"                        'Values': [event['ResourceProperties']['InstanceId']]",
+								"                    },",
+								"                    {",
+								"                        'Name': 'attachment.device-index',",
+								"                        'Values': ['0']",
+								"                    }",
+								"                ]",
+								"            )",
+								"    except Exception as error:",
+								"        logger.error('<--!! Exception: {}'.format(error))",
+								"        responseData = {'msg':'Exception: {}'.format(error)}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								"        return None",
+								"",
+								"    if response['ResponseMetadata']['HTTPStatusCode'] == 200 and response['NetworkInterfaces'] != []:",
+								"        fgt_eni = response['NetworkInterfaces'][0]['NetworkInterfaceId']",
+								"        fgt_eni_result = True",
+								"        logger.info('--> found Fgt {} primary ENI: {}'.format(event['ResourceProperties']['InstanceId'],fgt_eni))",
+								"    else:",
+								"        logger.error('!!--> Unable to Fgt primary ENI in response! {}'.format(response))",
+								"",
+								"    if fgt_eni_result is True:",
+								"        responseData = {'fgt_eni':fgt_eni}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"    else:",
+								"        responseData = {'msg':'error'}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								""
+							]
+						]
+					}
+				},
+				"Runtime": "python3.9",
+				"Timeout": 150
+			}
+		},
+		"RunDescribeFgt1aEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt1a"
+				}
+			}
+		},
+		"RunDescribeFgt2aEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt2a"
+				}
+			}
+		},
+		"RunDescribeFgt3aEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "3AZs+",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt3a"
+				}
+			}
+		},
+		"RunDescribeFgt4aEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "4AZs+",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt4a"
+				}
+			}
+		},
+		"RunDescribeFgt5aEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "5AZs+",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt5a"
+				}
+			}
+		},
+		"RunDescribeFgt6aEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "6AZs",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt6a"
+				}
+			}
+		},
+		"RunDescribeFgt1bEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt1b"
+				}
+			}
+		},
+		"RunDescribeFgt2bEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt2b"
+				}
+			}
+		},
+		"RunDescribeFgt3bEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "3AZs+And2FgtsPerAZ",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt3b"
+				}
+			}
+		},
+		"RunDescribeFgt4bEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "4AZs+And2FgtsPerAZ",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt4b"
+				}
+			}
+		},
+		"RunDescribeFgt5bEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "5AZs+And2FgtsPerAZ",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt5b"
+				}
+			}
+		},
+		"RunDescribeFgt6bEni": {
+			"Type": "Custom::DescribeFgtEni",
+			"Condition": "6AZsAnd2FgtsPerAZ",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"DescribeFgtEni",
+						"Arn"
+					]
+				},
+				"InstanceId": {
+					"Ref": "Fgt6b"
+				}
+			}
+		},
+		"ImageFunction": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"ZipFile": {
+						"Fn::Join": [
+							"\n",
+							[
+								"import boto3",
+								"import cfnresponse",
+								"import logging",
+								"import json",
+								"logger = logging.getLogger()",
+								"logger.setLevel(logging.INFO)",
+								"client = boto3.client('ec2')",
+								"",
+								"def handler(event, context):",
+								"    if event['RequestType'] == 'Create':",
+								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
+								"        searchString = event['ResourceProperties']['SearchString']",
+								"        productCode =  event['ResourceProperties']['ProductCode']",
+								"    else:",
+								"        responseData = {'msg':'200'}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"        return None",
+								"",
+								"    try:",
+								"        resp = client.describe_images(",
+								"            Filters=[{'Name': 'name', 'Values': [searchString]}, {'Name': 'product-code', 'Values': [productCode]}],",
+								"            Owners=['aws-marketplace']",
+								"        )",
+								"    except Exception as error:",
+								"        logger.error('<--!! Exception: {}'.format(error))",
+								"        responseData = {'msg':'Exception: {}'.format(error)}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								"",
+								"    if resp['ResponseMetadata']['HTTPStatusCode'] == 200 and resp['Images'] != []:",
+								"        ami_dict = {}",
+								"        ami_list = []",
+								"        for entry in resp['Images']:",
+								"            key = entry['CreationDate']",
+								"            ami_dict[key] = entry['ImageId']",
+								"        ami_list = sorted(ami_dict, reverse = True)",
+								"        logger.info('--> found latest AMI: {}, {}, {} {}'.format(ami_dict[ami_list[0]], ami_list[0], searchString, productCode))",
+								"        responseData = {'ami': ami_dict[ami_list[0]]}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"    else:",
+								"        logger.error('!!--> Unable to find AMI {} {} in describe_images response! {}'.format(searchString, productCode, resp))",
+								"        responseData = {'msg':'Unable to find AMI {} {} in describe_images response! {}'.format(searchString, productCode,resp)}",
+								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+								""
+							]
+						]
+					}
+				},
+				"Role": {
+					"Fn::GetAtt": [
+						"LambdaRole",
+						"Arn"
+					]
+				},
+				"Timeout": 120,
+				"Handler": "index.handler",
+				"Runtime": "python3.9",
+				"MemorySize": 128
+			}
+		},
+		"RunImageFunction": {
+			"Type": "Custom::ImageFunction",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"ImageFunction",
+						"Arn"
+					]
+				},
+				"SearchString": {
+					"Fn::If": [
+						"Graviton",
+						{
+							"Fn::Select": [
+								"0",
+								{
+									"Fn::Split": [
+										"|",
+										{
+											"Fn::FindInMap": [
+												"FortiOSArmAMISearchString",
+												{
+													"Ref": "FortiOSVersion"
+												},
+												{
+													"Ref": "LicenseType"
+												}
+											]
+										}
+									]
+								}
+							]
+						},
+						{
+							"Fn::Select": [
+								"0",
+								{
+									"Fn::Split": [
+										"|",
+										{
+											"Fn::FindInMap": [
+												"FortiOSIntelAMISearchString",
+												{
+													"Ref": "FortiOSVersion"
+												},
+												{
+													"Ref": "LicenseType"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				},
+				"ProductCode": {
+					"Fn::If": [
+						"Graviton",
+						{
+							"Fn::Select": [
+								"1",
+								{
+									"Fn::Split": [
+										"|",
+										{
+											"Fn::FindInMap": [
+												"FortiOSArmAMISearchString",
+												{
+													"Ref": "FortiOSVersion"
+												},
+												{
+													"Ref": "LicenseType"
+												}
+											]
+										}
+									]
+								}
+							]
+						},
+						{
+							"Fn::Select": [
+								"1",
+								{
+									"Fn::Split": [
+										"|",
+										{
+											"Fn::FindInMap": [
+												"FortiOSIntelAMISearchString",
+												{
+													"Ref": "FortiOSVersion"
+												},
+												{
+													"Ref": "LicenseType"
+												}
+											]
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"InitFunction": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"ZipFile": {
+						"Fn::Join": [
+							"\n",
+							[
+								"import ast",
+								"import boto3",
+								"import cfnresponse",
+								"import json",
+								"import logging",
+								"logger = logging.getLogger()",
+								"logger.setLevel(logging.INFO)",
+								"s3 = boto3.client('s3')",
+								"",
+								"template = '''\\",
+								"config system global",
+								"set admintimeout 60",
+								"end",
+								"config system interface",
+								"edit port1",
+								"set alias public",
+								"set mode dhcp",
+								"set allowaccess ping https ssh fgfm",
+								"set mtu-override enable",
+								"set mtu 9001",
+								"next",
+								"edit port2",
+								"set alias private",
+								"set mode dhcp",
+								"set allowaccess ping https ssh fgfm",
+								"set mtu-override enable",
+								"set mtu 9001",
+								"next",
+								"end",
+								"config system geneve",
+								"edit gwlb1-az1",
+								"set interface port1",
+								"set type ppp",
+								{
+									"Fn::Join": [
+										"",
+										[
+											"set remote-ip ",
+											{
+												"Fn::Select": [
+													"0",
+													{
+														"Fn::GetAtt": [
+															"RunDescribeGwlbEni",
+															"gwlb_ips"
+														]
+													}
+												]
+											}
+										]
+									]
+								},
+								"next",
+								"edit gwlb1-az2",
+								"set interface port1",
+								"set type ppp",
+								{
+									"Fn::Join": [
+										"",
+										[
+											"set remote-ip ",
+											{
+												"Fn::Select": [
+													"1",
+													{
+														"Fn::GetAtt": [
+															"RunDescribeGwlbEni",
+															"gwlb_ips"
+														]
+													}
+												]
+											}
+										]
+									]
+								},
+								"next",
+								{
+									"Fn::If": [
+										"3AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit gwlb1-az3",
+													"set interface port1",
+													"set type ppp",
+													{
+														"Fn::Join": [
+															"",
+															[
+																"set remote-ip ",
+																{
+																	"Fn::Select": [
+																		"2",
+																		{
+																			"Fn::GetAtt": [
+																				"RunDescribeGwlbEni",
+																				"gwlb_ips"
+																			]
+																		}
+																	]
+																}
+															]
+														]
+													},
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"4AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit gwlb1-az4",
+													"set interface port1",
+													"set type ppp",
+													{
+														"Fn::Join": [
+															"",
+															[
+																"set remote-ip ",
+																{
+																	"Fn::Select": [
+																		"3",
+																		{
+																			"Fn::GetAtt": [
+																				"RunDescribeGwlbEni",
+																				"gwlb_ips"
+																			]
+																		}
+																	]
+																}
+															]
+														]
+													},
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"5AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit gwlb1-az5",
+													"set interface port1",
+													"set type ppp",
+													{
+														"Fn::Join": [
+															"",
+															[
+																"set remote-ip ",
+																{
+																	"Fn::Select": [
+																		"5",
+																		{
+																			"Fn::GetAtt": [
+																				"RunDescribeGwlbEni",
+																				"gwlb_ips"
+																			]
+																		}
+																	]
+																}
+															]
+														]
+													},
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"6AZs",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit gwlb1-az6",
+													"set interface port1",
+													"set type ppp",
+													{
+														"Fn::Join": [
+															"",
+															[
+																"set remote-ip ",
+																{
+																	"Fn::Select": [
+																		"5",
+																		{
+																			"Fn::GetAtt": [
+																				"RunDescribeGwlbEni",
+																				"gwlb_ips"
+																			]
+																		}
+																	]
+																}
+															]
+														]
+													},
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								"end",
+								"config system zone",
+								"edit gwlb1-tunnels",
+								{
+									"Fn::If": [
+										"2AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"set interface gwlb1-az1 gwlb1-az2"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"3AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"set interface gwlb1-az1 gwlb1-az2 gwlb1-az3"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"4AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"set interface gwlb1-az1 gwlb1-az2 gwlb1-az3 gwlb1-az4"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"5AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"set interface gwlb1-az1 gwlb1-az2 gwlb1-az3 gwlb1-az4 gwlb1-az5"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"6AZs",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"set interface gwlb1-az1 gwlb1-az2 gwlb1-az3 gwlb1-az4 gwlb1-az5 gwlb1-az6"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								"next",
+								"end",
+								"config router static",
+								"edit 1",
+								"set distance 5",
+								"set priority 100",
+								"set device gwlb1-az1",
+								"next",
+								"edit 2",
+								"set distance 5",
+								"set priority 100",
+								"set device gwlb1-az2",
+								"next",
+								{
+									"Fn::If": [
+										"3AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 3",
+													"set distance 5",
+													"set priority 100",
+													"set device gwlb1-az3",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"4AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 4",
+													"set distance 5",
+													"set priority 100",
+													"set device gwlb1-az4",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"5AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 5",
+													"set distance 5",
+													"set priority 100",
+													"set device gwlb1-az5",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"6AZs",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 6",
+													"set distance 5",
+													"set priority 100",
+													"set device gwlb1-az6",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								"end",
+								"config router policy",
+								"edit 1",
+								"set input-device gwlb1-az1",
+								"set dst 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0",
+								"set output-device gwlb1-az1",
+								"next",
+								"edit 2",
+								"set input-device gwlb1-az2",
+								"set dst 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0",
+								"set output-device gwlb1-az2",
+								"next",
+								{
+									"Fn::If": [
+										"3AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 3",
+													"set input-device gwlb1-az3",
+													"set dst 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0",
+													"set output-device gwlb1-az3",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"4AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 4",
+													"set input-device gwlb1-az4",
+													"set dst 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0",
+													"set output-device gwlb1-az4",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"5AZs+",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 5",
+													"set input-device gwlb1-az5",
+													"set dst 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0",
+													"set output-device gwlb1-az5",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								{
+									"Fn::If": [
+										"6AZs",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"edit 6",
+													"set input-device gwlb1-az6",
+													"set dst 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0",
+													"set output-device gwlb1-az6",
+													"next"
+												]
+											]
+										},
+										{
+											"Ref": "AWS::NoValue"
+										}
+									]
+								},
+								"end",
+								"config firewall policy",
+								"edit 1",
+								"set name egress",
+								"set srcintf gwlb1-tunnels",
+								"set dstintf port1",
+								"set srcaddr all",
+								"set dstaddr all",
+								"set action accept",
+								"set schedule always",
+								"set service ALL",
+								"set logtraffic all",
+								"set nat enable",
+								"next",
+								"edit 2",
+								"set name ingress-east-west",
+								"set srcintf gwlb1-tunnels",
+								"set dstintf gwlb1-tunnels",
+								"set srcaddr all",
+								"set dstaddr all",
+								"set action accept",
+								"set schedule always",
+								"set service ALL",
+								"set logtraffic all",
+								"next",
+								"end",
+								"config system sdn-connector",
+								"edit aws-instance-role",
+								"set status enable",
+								"set type aws",
+								"set use-metadata-iam enable",
+								"next",
+								"end\\",
+								"'''",
+								"",
+								"def handler(event, context):",
+								"    if event['RequestType'] == 'Create':",
+								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
+								"    else:",
+								"        responseData = {'msg':'200'}",
+								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+								"        return None",
+								"",
+								{
+									"Fn::If": [
+										"BYOL",
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"    try:",
+													"        response = s3.put_object(Body=template, Bucket=event['ResourceProperties']['S3Bucket'], Key='fgt-config.txt')",
+													"    except Exception as error:",
+													"        logger.error('<--!! Exception: {}'.format(error))",
+													"        responseData = {'msg':'Exception: {}'.format(error)}",
+													"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+													"        return None",
+													"",
+													"    if response['ResponseMetadata']['HTTPStatusCode'] == 200:",
+													"        logger.info('<-- s3 put_object fgt-config.txt successful')",
+													"        responseData = {'fgt_config':template}",
+													"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+													"    else:",
+													"        responseData = {'msg':'error'}",
+													"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
+													""
+												]
+											]
+										},
+										{
+											"Fn::Join": [
+												"\n",
+												[
+													"    responseData = {'fgt_config':template}",
+													"    cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+													""
+												]
+											]
+										}
+									]
+								}
+							]
+						]
+					}
+				},
+				"Role": {
+					"Fn::GetAtt": [
+						"LambdaRole",
+						"Arn"
+					]
+				},
+				"Timeout": 120,
+				"Handler": "index.handler",
+				"Runtime": "python3.9",
+				"MemorySize": 128
+			}
+		},
+		"RunInitFunction": {
+			"Type": "Custom::InitFunction",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": [
+						"InitFunction",
+						"Arn"
+					]
+				},
+				"S3Bucket": {
+					"Ref": "InitS3Bucket"
+				}
+			}
+		}
+	},
+	"Outputs": {
+		"Username": {
+			"Value": "admin",
+			"Description": "Username for the Fortigates"
+		},
+		"Password": {
+			"Value": "The instance ID of each FortiGate",
+			"Description": "Initial password for each FortiGates"
+		},
+		"FortiGate1aLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt1aEIP"
+						}
+					]
+				]
+			},
+			"Description": "Login URL for FortiGate 1a"
+		},
+		"FortiGate2aLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt2aEIP"
+						}
+					]
+				]
+			},
+			"Description": "Login URL for FortiGate 2a"
+		},
+		"FortiGate3aLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt3aEIP"
+						}
+					]
+				]
+			},
+			"Condition": "3AZs+",
+			"Description": "Login URL for FortiGate 3a"
+		},
+		"FortiGate4aLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt4aEIP"
+						}
+					]
+				]
+			},
+			"Condition": "4AZs+",
+			"Description": "Login URL for FortiGate 4a"
+		},
+		"FortiGate5aLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt5aEIP"
+						}
+					]
+				]
+			},
+			"Condition": "5AZs+",
+			"Description": "Login URL for FortiGate 5a"
+		},
+		"FortiGate6aLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt6aEIP"
+						}
+					]
+				]
+			},
+			"Condition": "6AZs",
+			"Description": "Login URL for FortiGate 6a"
+		},
+		"FortiGate1bLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt1bEIP"
+						}
+					]
+				]
+			},
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Description": "Login URL for FortiGate 1b"
+		},
+		"FortiGate2bLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt2bEIP"
+						}
+					]
+				]
+			},
+			"Condition": "2AZs+And2FgtsPerAZ",
+			"Description": "Login URL for FortiGate 2b"
+		},
+		"FortiGate3bLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt3bEIP"
+						}
+					]
+				]
+			},
+			"Condition": "3AZs+And2FgtsPerAZ",
+			"Description": "Login URL for FortiGate 3b"
+		},
+		"FortiGate4bLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt4bEIP"
+						}
+					]
+				]
+			},
+			"Condition": "4AZs+And2FgtsPerAZ",
+			"Description": "Login URL for FortiGate 4b"
+		},
+		"FortiGate5bLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt5bEIP"
+						}
+					]
+				]
+			},
+			"Condition": "5AZs+And2FgtsPerAZ",
+			"Description": "Login URL for FortiGate 5b"
+		},
+		"FortiGate6bLoginURL": {
+			"Value": {
+				"Fn::Join": [
+					"",
+					[
+						"https://",
+						{
+							"Ref": "Fgt6bEIP"
+						}
+					]
+				]
+			},
+			"Condition": "6AZsAnd2FgtsPerAZ",
+			"Description": "Login URL for FortiGate 6b"
+		},
+		"VpcEndpointServiceName": {
+			"Value": {
+				"Fn::GetAtt": [
+					"RunDescribeVpceService",
+					"ServiceName"
+				]
+			},
+			"Description": "VPC endpoint service name, for use in spoke template"
+		},
+		"TransitGateway": {
+			"Value": {
+				"Ref": "TransitGateway"
+			},
+			"Condition": "CreateTgw",
+			"Description": "Transit Gateway ID, for use in spoke template"
+		},
+		"TransitGatewaySecurityRtb": {
+			"Value": {
+				"Ref": "TransitGatewaySecurityRtb"
+			},
+			"Condition": "CreateTgw",
+			"Description": "Transit Gateway Route Table ID that the security VPC is associated to, for use in spoke template"
+		},
+		"TransitGatewaySpokeRtb": {
+			"Value": {
+				"Ref": "TransitGatewaySpokeRtb"
+			},
+			"Condition": "CreateTgw",
+			"Description": "Transit Gateway Route Table ID that the spoke VPCs will associate to, for use in spoke template"
+		},
+		"ExistingTransitGateway": {
+			"Value": {
+				"Ref": "TgwExisting"
+			},
+			"Condition": "ExistingTGW",
+			"Description": "Existing Transit Gateway ID, for use in spoke template"
+		},
+		"ExistingTransitGatewaySecurityRtb": {
+			"Value": {
+				"Ref": "TgwExistingSecurityTgwRtb"
+			},
+			"Condition": "ExistingTGW",
+			"Description": "Existing Transit Gateway Route Table ID that the security VPC is associated to, for use in spoke template"
+		},
+		"ExistingTransitGatewaySpokeRtb": {
+			"Value": {
+				"Ref": "TgwExistingSpokeTgwRtb"
+			},
+			"Condition": "ExistingTGW",
+			"Description": "Existing Transit Gateway Route Table ID that the spoke VPCs will associate to, for use in spoke template"
+		}
+	}
+}
