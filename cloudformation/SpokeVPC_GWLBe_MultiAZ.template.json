@@ -1,0 +1,1942 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "(v3.0) Deploy a spoke VPC for a GWLB endpoint design with 6 subnets (Public, Private, Gwlbe) across 2 Availability Zones.",
+	"Metadata": {
+		"AWS::CloudFormation::Interface": {
+			"ParameterGroups": [
+				{
+					"Label": {
+						"default": "VPC Configuration"
+					},
+					"Parameters": [
+						"VPCCIDR",
+						"NumOfAZs",
+						"AZs",
+						"PublicSubnetCIDRs",
+						"PrivateSubnetCIDRs",
+						"GwlbSubnetCIDRs"
+					]
+				},
+				{
+					"Label": {
+						"default": "GWLBe Configuration"
+					},
+					"Parameters": [
+						"VpcEndpointServiceName"
+					]
+				},
+				{
+					"Label": {
+						"default": "TGW Configuration"
+					},
+					"Parameters": [
+						"TransitGateway",
+						"TransitGatewaySecurityRtb",
+						"TransitGatewaySpokeRtb",
+						"RouteForTgwEastWest"
+					]
+				}
+			]
+		}
+	},
+	"Parameters": {
+		"VPCCIDR": {
+			"Type": "String",
+			"Default": "10.1.0.0/16",
+			"Description": "Provide a network CIDR for the VPC"
+		},
+		"NumOfAZs": {
+			"Type": "String",
+			"Default": "2",
+			"Description": "Select the number of Availability Zones to use (Min 2, Max 6)",
+			"AllowedValues": [
+				"2",
+				"3",
+				"4",
+				"5",
+				"6"
+			]
+		},
+		"AZs": {
+			"Type": "List<AWS::EC2::AvailabilityZone::Name>",
+			"Description": "Select the Availability Zones (Min 2, Max 6)"
+		},
+		"PublicSubnetCIDRs": {
+			"Type": "CommaDelimitedList",
+			"Default": "10.1.1.0/24, 10.1.2.0/24",
+			"Description": "Provide a list of network CIDRs for Public Subnets (Min 2, Max 6)"
+		},
+		"PrivateSubnetCIDRs": {
+			"Type": "CommaDelimitedList",
+			"Default": "10.1.3.0/24, 10.1.4.0/24",
+			"Description": "Provide a list of network CIDRs for Private Subnets (Min 2, Max 6)"
+		},
+		"GwlbSubnetCIDRs": {
+			"Type": "CommaDelimitedList",
+			"Default": "10.1.5.0/24, 10.1.6.0/24",
+			"Description": "Provide a list of network CIDRs for GLWB Subnets (Min 2, Max 6)"
+		},
+		"TransitGateway": {
+			"Type": "String",
+			"Description": "[Leave blank if TGW will not be used] Provide the Transit GW ID to attach to"
+		},
+		"TransitGatewaySecurityRtb": {
+			"Type": "String",
+			"Description": "[Leave blank if TGW will not be used] Provide the Transit GW RouteTable ID that the security VPC is associated to"
+		},
+		"TransitGatewaySpokeRtb": {
+			"Type": "String",
+			"Description": "[Leave blank if TGW will not be used] Provide the Transit GW RouteTable ID that your spoke VPCs will be associated to"
+		},
+		"VpcEndpointServiceName": {
+			"Type": "String",
+			"Description": "Provide the Vpc Endpoint Service Name that is associated to your Gateway Load Balancer."
+		},
+		"RouteForTgwEastWest": {
+			"Type": "String",
+			"Default": "10.0.0.0/8",
+			"Description": "[Ignore if TGW will not be used] Provide a network CIDR to create VPC routes to reach private resources via TGW "
+		}
+	},
+	"Conditions": {
+		"2AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"2"
+			]
+		},
+		"3AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"3"
+			]
+		},
+		"4AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"4"
+			]
+		},
+		"5AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"5"
+			]
+		},
+		"6AZs": {
+			"Fn::Equals": [
+				{
+					"Ref": "NumOfAZs"
+				},
+				"6"
+			]
+		},
+		"2AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "2AZs"
+				},
+				{
+					"Condition": "3AZs"
+				},
+				{
+					"Condition": "4AZs"
+				},
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"3AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "3AZs"
+				},
+				{
+					"Condition": "4AZs"
+				},
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"4AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "4AZs"
+				},
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"5AZs+": {
+			"Fn::Or": [
+				{
+					"Condition": "5AZs"
+				},
+				{
+					"Condition": "6AZs"
+				}
+			]
+		},
+		"TgwAttach": {
+			"Fn::Not": [
+				{
+					"Fn::Equals": [
+						{
+							"Ref": "TransitGateway"
+						},
+						""
+					]
+				}
+			]
+		},
+		"3AZs+AndTgwAttach": {
+			"Fn::And": [
+				{
+					"Condition": "3AZs+"
+				},
+				{
+					"Condition": "TgwAttach"
+				}
+			]
+		},
+		"4AZs+AndTgwAttach": {
+			"Fn::And": [
+				{
+					"Condition": "4AZs+"
+				},
+				{
+					"Condition": "TgwAttach"
+				}
+			]
+		},
+		"5AZs+AndTgwAttach": {
+			"Fn::And": [
+				{
+					"Condition": "5AZs+"
+				},
+				{
+					"Condition": "TgwAttach"
+				}
+			]
+		},
+		"6AZsAndTgwAttach": {
+			"Fn::And": [
+				{
+					"Condition": "6AZs"
+				},
+				{
+					"Condition": "TgwAttach"
+				}
+			]
+		}
+	},
+	"Resources": {
+		"VPC": {
+			"Type": "AWS::EC2::VPC",
+			"Properties": {
+				"CidrBlock": {
+					"Ref": "VPCCIDR"
+				},
+				"EnableDnsSupport": "true",
+				"EnableDnsHostnames": "true",
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"VPC"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub1": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet1"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub2": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet2"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub3": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "3AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet3"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub4": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "4AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet4"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub5": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "5AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet5"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PublicSub6": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "6AZs",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PublicSubnet6"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub1": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet1"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub2": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet2"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub3": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "3AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet3"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub4": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "4AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet4"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub5": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "5AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet5"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateSub6": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "6AZs",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "PrivateSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateSubnet6"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub1": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet1"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub2": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet2"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub3": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "3AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet3"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub4": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "4AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet4"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub5": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "5AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet5"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbSub6": {
+			"Type": "AWS::EC2::Subnet",
+			"Condition": "6AZs",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "GwlbSubnetCIDRs"
+						}
+					]
+				},
+				"AvailabilityZone": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "AZs"
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbSubnet6"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"InternetGateway": {
+			"Type": "AWS::EC2::InternetGateway",
+			"Properties": {
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"IGW"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"AttachGateway": {
+			"Type": "AWS::EC2::VPCGatewayAttachment",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"InternetGatewayId": {
+					"Ref": "InternetGateway"
+				}
+			}
+		},
+		"GwlbEndpoint1": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Ref": "VpcEndpointServiceName"
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub1"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint2": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Ref": "VpcEndpointServiceName"
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub2"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint3": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "3AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Ref": "VpcEndpointServiceName"
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub3"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint4": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "4AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Ref": "VpcEndpointServiceName"
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub4"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint5": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "5AZs+",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Ref": "VpcEndpointServiceName"
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub5"
+					}
+				]
+			}
+		},
+		"GwlbEndpoint6": {
+			"Type": "AWS::EC2::VPCEndpoint",
+			"Condition": "6AZs",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"ServiceName": {
+					"Ref": "VpcEndpointServiceName"
+				},
+				"VpcEndpointType": "GatewayLoadBalancer",
+				"SubnetIds": [
+					{
+						"Ref": "GwlbSub6"
+					}
+				]
+			}
+		},
+		"TransitGatewaySpokeVpcAttachment": {
+			"Type": "AWS::EC2::TransitGatewayAttachment",
+			"Condition": "TgwAttach",
+			"Properties": {
+				"SubnetIds": [
+					{
+						"Ref": "PrivateSub1"
+					},
+					{
+						"Ref": "PrivateSub2"
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Ref": "PrivateSub3"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Ref": "PrivateSub4"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Ref": "PrivateSub5"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Ref": "PrivateSub6"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				],
+				"TransitGatewayId": {
+					"Ref": "TransitGateway"
+				},
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"spoke-vpc-attachment"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"TransitGatewaySpokeVpcAttachmentAssociation": {
+			"Type": "AWS::EC2::TransitGatewayRouteTableAssociation",
+			"DependsOn": "PrivateSub2",
+			"Condition": "TgwAttach",
+			"Properties": {
+				"TransitGatewayAttachmentId": {
+					"Ref": "TransitGatewaySpokeVpcAttachment"
+				},
+				"TransitGatewayRouteTableId": {
+					"Ref": "TransitGatewaySpokeRtb"
+				}
+			}
+		},
+		"TransitGatewaySpokeVpcRouteTablePropagation": {
+			"Type": "AWS::EC2::TransitGatewayRouteTablePropagation",
+			"DependsOn": "TransitGatewaySpokeVpcAttachment",
+			"Condition": "TgwAttach",
+			"Properties": {
+				"TransitGatewayAttachmentId": {
+					"Ref": "TransitGatewaySpokeVpcAttachment"
+				},
+				"TransitGatewayRouteTableId": {
+					"Ref": "TransitGatewaySecurityRtb"
+				}
+			}
+		},
+		"Public1RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "TgwAttach",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Public1RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Public2RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "TgwAttach",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Public2RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Public3RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "3AZs+AndTgwAttach",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Public3RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Public4RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "4AZs+AndTgwAttach",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Public4RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Public5RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "5AZs+AndTgwAttach",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Public5RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Public6RouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "6AZsAndTgwAttach",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"Public6RouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"PrivateRouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Condition": "TgwAttach",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"PrivateRouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"GwlbRouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"GwlbRouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"IgwRouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Join": [
+								"-",
+								[
+									{
+										"Ref": "AWS::StackName"
+									},
+									"IgwRouteTable"
+								]
+							]
+						}
+					}
+				]
+			}
+		},
+		"Route1": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "TgwAttach",
+			"DependsOn": "GwlbEndpoint1",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "IgwRouteTable"
+				},
+				"DestinationCidrBlock": {
+					"Fn::Select": [
+						"0",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint1"
+				}
+			}
+		},
+		"Route2": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "TgwAttach",
+			"DependsOn": "GwlbEndpoint2",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "IgwRouteTable"
+				},
+				"DestinationCidrBlock": {
+					"Fn::Select": [
+						"1",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint2"
+				}
+			}
+		},
+		"Route3": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "3AZs+AndTgwAttach",
+			"DependsOn": "GwlbEndpoint3",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "IgwRouteTable"
+				},
+				"DestinationCidrBlock": {
+					"Fn::Select": [
+						"2",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint3"
+				}
+			}
+		},
+		"Route4": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "4AZs+AndTgwAttach",
+			"DependsOn": "GwlbEndpoint4",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "IgwRouteTable"
+				},
+				"DestinationCidrBlock": {
+					"Fn::Select": [
+						"3",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint4"
+				}
+			}
+		},
+		"Route5": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "5AZs+AndTgwAttach",
+			"DependsOn": "GwlbEndpoint5",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "IgwRouteTable"
+				},
+				"DestinationCidrBlock": {
+					"Fn::Select": [
+						"4",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint5"
+				}
+			}
+		},
+		"Route6": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "6AZsAndTgwAttach",
+			"DependsOn": "GwlbEndpoint6",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "IgwRouteTable"
+				},
+				"DestinationCidrBlock": {
+					"Fn::Select": [
+						"5",
+						{
+							"Ref": "PublicSubnetCIDRs"
+						}
+					]
+				},
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint6"
+				}
+			}
+		},
+		"Route7": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "TgwAttach",
+			"DependsOn": "GwlbEndpoint1",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "Public1RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint1"
+				}
+			}
+		},
+		"Route8": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "TgwAttach",
+			"DependsOn": "GwlbEndpoint2",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "Public2RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint2"
+				}
+			}
+		},
+		"Route9": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "3AZs+AndTgwAttach",
+			"DependsOn": "GwlbEndpoint3",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "Public3RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint3"
+				}
+			}
+		},
+		"Route10": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "4AZs+AndTgwAttach",
+			"DependsOn": "GwlbEndpoint4",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "Public4RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint4"
+				}
+			}
+		},
+		"Route11": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "5AZs+AndTgwAttach",
+			"DependsOn": "GwlbEndpoint5",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "Public5RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint5"
+				}
+			}
+		},
+		"Route12": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "6AZsAndTgwAttach",
+			"DependsOn": "GwlbEndpoint6",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "Public6RouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"VpcEndpointId": {
+					"Ref": "GwlbEndpoint6"
+				}
+			}
+		},
+		"Route13": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "TgwAttach",
+			"DependsOn": "TransitGatewaySpokeVpcAttachment",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				},
+				"DestinationCidrBlock": {
+					"Ref": "RouteForTgwEastWest"
+				},
+				"TransitGatewayId": {
+					"Ref": "TransitGateway"
+				}
+			}
+		},
+		"Route14": {
+			"Type": "AWS::EC2::Route",
+			"DependsOn": "AttachGateway",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"GatewayId": {
+					"Ref": "InternetGateway"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc1": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub1"
+				},
+				"RouteTableId": {
+					"Ref": "Public1RouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub2"
+				},
+				"RouteTableId": {
+					"Ref": "Public2RouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc3": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "3AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub3"
+				},
+				"RouteTableId": {
+					"Ref": "Public3RouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc4": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "4AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub4"
+				},
+				"RouteTableId": {
+					"Ref": "Public4RouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc5": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "5AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub5"
+				},
+				"RouteTableId": {
+					"Ref": "Public5RouteTable"
+				}
+			}
+		},
+		"PublicSubnetRouteTableAssoc6": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "6AZs",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PublicSub6"
+				},
+				"RouteTableId": {
+					"Ref": "Public6RouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc1": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub1"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub2"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc3": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "3AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub3"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc4": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "4AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub4"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc5": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "5AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub5"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"PrivateSubnetRouteTableAssoc6": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "6AZs",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "PrivateSub6"
+				},
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc1": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub1"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc2": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub2"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc3": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "3AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub3"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc4": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "4AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub4"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc5": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "5AZs+",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub5"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GwlbSubnetRouteTableAssoc6": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Condition": "6AZs",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "GwlbSub6"
+				},
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				}
+			}
+		},
+		"GatewayRouteTableAssociation": {
+			"Type": "AWS::EC2::GatewayRouteTableAssociation",
+			"Properties": {
+				"GatewayId": {
+					"Ref": "InternetGateway"
+				},
+				"RouteTableId": {
+					"Ref": "IgwRouteTable"
+				}
+			}
+		}
+	},
+	"Outputs": {
+	}
+}
