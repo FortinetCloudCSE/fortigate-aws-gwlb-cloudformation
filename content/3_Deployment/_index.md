@@ -55,26 +55,8 @@ Once the prerequisites have been satisfied proceed with the deployment steps bel
      ![](deploy8b.png)
      ![](deploy8c.png)
 
-	 {{% notice tip %}}We deployed some workload instances in both spoke VPCs to generate traffic flow through the security stack.{{% /notice %}}
-
 10.  Select the Outputs tab of the security stack to get the login information for the FGT instances.
 
      ![](deploy9.png)
 
-11.  On the FortiGate GUI navigate to Network > Interfaces, Network > Policy Routes, and run the CLI commands below '\to see the bootstrapped networking config.  **Notice** the GENEVE tunnels are between the FGT port1 interface IP and the private IP of the GWLB node ENI IP.  Also **notice** the priority settings in the static routes and policy routes which allow using the FGTs as Nat GWs for internet bound traffic but to hairpin east/west traffic.
-
-     ![](deploy10a.png)
-     ![](deploy10b.png)
-     ![](deploy10c.png)
-     ![](deploy10d.png)
-
-
-12.  After accessing one of the jump box instances, we can use a sniffer command on one or all FGTs to see traffic flow over the GENEVE tunnels to different destinations.  Since the GWLB will hash traffic based on source/dest IPs, Ports, and Protocol, either run the sniffer command on all FGTs or temporarily shutdown all FGTs but one to easily verify traffic flow.
-
-     {{% notice tip %}}Notice that the FGTs are acting as a Nat GW for internet bound traffic and Source NATing the traffic and routing it out port1, while east/west is hair pinned back to the correct geneve tunnel.{{% /notice %}}
-
-     ![](deploy11a.png)
-     ![](deploy11b.png)
-     ![](deploy11c.png)
-
-13.  This concludes the template deployment example.
+11.  This concludes the template deployment example.
