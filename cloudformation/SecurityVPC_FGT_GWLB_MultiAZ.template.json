@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v5.2) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
+	"Description": "(v5.3) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -3486,7 +3486,10 @@
 									"Sid": "SDNConnectorFortiView",
 									"Effect": "Allow",
 									"Action": [
+										"ec2:DescribeInstances",
+										"ec2:DescribeNetworkInterfaces",
 										"ec2:DescribeRegions",
+										"ec2:DescribeVpcEndpoints",
 										"ec2:DescribeInstances",
 										"eks:DescribeCluster",
 										"eks:ListClusters",
@@ -8085,6 +8088,7 @@
 								"set status enable",
 								"set type aws",
 								"set use-metadata-iam enable",
+								"set alt-resource-ip enable",
 								"next",
 								"end\\",
 								"'''",
