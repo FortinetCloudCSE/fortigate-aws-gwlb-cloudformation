@@ -165,7 +165,7 @@ url = "https://github.com/FortinetCloudCSE"
 weight = 1
 
 [[menu.shortcuts]] 
-name = "<i class='far fa-lightbulb'></i> CSE Team FGCP in AWS"
+name = "<i class='far fa-lightbulb'></i> CSE Team FGTs & GWLB in AWS"
 url = "https://fortinetcloudcse.github.io/GWLB-in-AWS"
 weight = 2
 
