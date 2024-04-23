@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v5.3) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
+	"Description": "(v5.4) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -6931,7 +6931,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt1a",
+				"Fgt1aEIP"
+			]
 		},
 		"Fgt2aEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -6948,7 +6952,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt2a",
+				"Fgt2aEIP"
+			]
 		},
 		"Fgt3aEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -6966,7 +6974,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt3a",
+				"Fgt3aEIP"
+			]
 		},
 		"Fgt4aEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -6984,7 +6996,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt4a",
+				"Fgt4aEIP"
+			]
 		},
 		"Fgt5aEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7002,7 +7018,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt5a",
+				"Fgt5aEIP"
+			]
 		},
 		"Fgt6aEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7020,7 +7040,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt6a",
+				"Fgt6aEIP"
+			]
 		},
 		"Fgt1bEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7038,7 +7062,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt1b",
+				"Fgt1bEIP"
+			]
 		},
 		"Fgt2bEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7056,7 +7084,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt2b",
+				"Fgt2bEIP"
+			]
 		},
 		"Fgt3bEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7074,7 +7106,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt3b",
+				"Fgt3bEIP"
+			]
 		},
 		"Fgt4bEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7092,7 +7128,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt4b",
+				"Fgt4bEIP"
+			]
 		},
 		"Fgt5bEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7110,7 +7150,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt5b",
+				"Fgt5bEIP"
+			]
 		},
 		"Fgt6bEIPASSOCIATION": {
 			"Type": "AWS::EC2::EIPAssociation",
@@ -7128,7 +7172,11 @@
 						"fgt_eni"
 					]
 				}
-			}
+			},
+			"DependsOn": [
+				"Fgt6b",
+				"Fgt6bEIP"
+			]
 		},
 		"DescribeFgtEni": {
 			"Type": "AWS::Lambda::Function",
