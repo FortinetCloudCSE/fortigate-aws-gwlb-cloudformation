@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v3.0) Deploy a spoke VPC for a GWLB endpoint design with 6 subnets (Public, Private, Gwlbe) across 2 Availability Zones.",
+	"Description": "(v3.1) Deploy a spoke VPC for a GWLB endpoint design with 6 subnets (Public, Private, Gwlbe) across 2 Availability Zones.",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -206,46 +206,6 @@
 						},
 						""
 					]
-				}
-			]
-		},
-		"3AZs+AndTgwAttach": {
-			"Fn::And": [
-				{
-					"Condition": "3AZs+"
-				},
-				{
-					"Condition": "TgwAttach"
-				}
-			]
-		},
-		"4AZs+AndTgwAttach": {
-			"Fn::And": [
-				{
-					"Condition": "4AZs+"
-				},
-				{
-					"Condition": "TgwAttach"
-				}
-			]
-		},
-		"5AZs+AndTgwAttach": {
-			"Fn::And": [
-				{
-					"Condition": "5AZs+"
-				},
-				{
-					"Condition": "TgwAttach"
-				}
-			]
-		},
-		"6AZsAndTgwAttach": {
-			"Fn::And": [
-				{
-					"Condition": "6AZs"
-				},
-				{
-					"Condition": "TgwAttach"
 				}
 			]
 		}
@@ -1229,7 +1189,7 @@
 		},
 		"TransitGatewaySpokeVpcAttachmentAssociation": {
 			"Type": "AWS::EC2::TransitGatewayRouteTableAssociation",
-			"DependsOn": "PrivateSub2",
+			"DependsOn": "TransitGatewaySpokeVpcAttachment",
 			"Condition": "TgwAttach",
 			"Properties": {
 				"TransitGatewayAttachmentId": {
@@ -1255,7 +1215,6 @@
 		},
 		"Public1RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "TgwAttach",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1280,7 +1239,6 @@
 		},
 		"Public2RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "TgwAttach",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1305,7 +1263,7 @@
 		},
 		"Public3RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "3AZs+AndTgwAttach",
+			"Condition": "3AZs+",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1330,7 +1288,7 @@
 		},
 		"Public4RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "4AZs+AndTgwAttach",
+			"Condition": "4AZs+",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1355,7 +1313,7 @@
 		},
 		"Public5RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "5AZs+AndTgwAttach",
+			"Condition": "5AZs+",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1380,7 +1338,7 @@
 		},
 		"Public6RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "6AZsAndTgwAttach",
+			"Condition": "6AZs",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1405,7 +1363,6 @@
 		},
 		"PrivateRouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "TgwAttach",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1478,7 +1435,6 @@
 		},
 		"Route1": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "TgwAttach",
 			"DependsOn": "GwlbEndpoint1",
 			"Properties": {
 				"RouteTableId": {
@@ -1499,7 +1455,6 @@
 		},
 		"Route2": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "TgwAttach",
 			"DependsOn": "GwlbEndpoint2",
 			"Properties": {
 				"RouteTableId": {
@@ -1520,7 +1475,7 @@
 		},
 		"Route3": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "3AZs+AndTgwAttach",
+			"Condition": "3AZs+",
 			"DependsOn": "GwlbEndpoint3",
 			"Properties": {
 				"RouteTableId": {
@@ -1541,7 +1496,7 @@
 		},
 		"Route4": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "4AZs+AndTgwAttach",
+			"Condition": "4AZs+",
 			"DependsOn": "GwlbEndpoint4",
 			"Properties": {
 				"RouteTableId": {
@@ -1562,7 +1517,7 @@
 		},
 		"Route5": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "5AZs+AndTgwAttach",
+			"Condition": "5AZs+",
 			"DependsOn": "GwlbEndpoint5",
 			"Properties": {
 				"RouteTableId": {
@@ -1583,7 +1538,7 @@
 		},
 		"Route6": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "6AZsAndTgwAttach",
+			"Condition": "6AZs",
 			"DependsOn": "GwlbEndpoint6",
 			"Properties": {
 				"RouteTableId": {
@@ -1604,7 +1559,6 @@
 		},
 		"Route7": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "TgwAttach",
 			"DependsOn": "GwlbEndpoint1",
 			"Properties": {
 				"RouteTableId": {
@@ -1618,7 +1572,6 @@
 		},
 		"Route8": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "TgwAttach",
 			"DependsOn": "GwlbEndpoint2",
 			"Properties": {
 				"RouteTableId": {
@@ -1632,7 +1585,7 @@
 		},
 		"Route9": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "3AZs+AndTgwAttach",
+			"Condition": "3AZs+",
 			"DependsOn": "GwlbEndpoint3",
 			"Properties": {
 				"RouteTableId": {
@@ -1646,7 +1599,7 @@
 		},
 		"Route10": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "4AZs+AndTgwAttach",
+			"Condition": "4AZs+",
 			"DependsOn": "GwlbEndpoint4",
 			"Properties": {
 				"RouteTableId": {
@@ -1660,7 +1613,7 @@
 		},
 		"Route11": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "5AZs+AndTgwAttach",
+			"Condition": "5AZs+",
 			"DependsOn": "GwlbEndpoint5",
 			"Properties": {
 				"RouteTableId": {
@@ -1674,7 +1627,7 @@
 		},
 		"Route12": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "6AZsAndTgwAttach",
+			"Condition": "6AZs",
 			"DependsOn": "GwlbEndpoint6",
 			"Properties": {
 				"RouteTableId": {
