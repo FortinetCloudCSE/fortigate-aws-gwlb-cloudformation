@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v5.4) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
+	"Description": "(v5.5) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -236,19 +236,19 @@
 		},
 		"LicenseFilesFor1stFgtPerAZ": {
 			"Type": "CommaDelimitedList",
-			"Description": "[BYOL Only, leave blank otherwise] Provide a list of file names of the BYOL license files in the Init S3 Bucket for the first Fgts to be deployed in each AZ (ie 'fgt1a.lic, prefix/fgt2a.lic' for Fgt1a-us-east-1a, Fgt1b-us-east-1a) (Min 2, Max 6)"
+			"Description": "[BYOL Only, leave blank otherwise] Provide a list of file names of the BYOL license files in the Init S3 Bucket for the first Fgts to be deployed in each AZ (ie 'fgt1a.lic, prefix/fgt2a.lic' for Fgt1a-us-east-1a, Fgt2a-us-east-1b) (Min 2, Max 6)"
 		},
 		"LicenseFilesFor2ndFgtPerAZ": {
 			"Type": "CommaDelimitedList",
-			"Description": "[BYOL Only, leave blank otherwise] Provide a list of file names of the BYOL license files in the Init S3 Bucket for the second Fgts to be deployed in each AZ (ie 'fgt1b.lic, prefix/fgt2b.lic' for Fgt1a-us-east-1a, Fgt1b-us-east-1a) (Min 2, Max 6)"
+			"Description": "[BYOL Only, leave blank otherwise] Provide a list of file names of the BYOL license files in the Init S3 Bucket for the second Fgts to be deployed in each AZ (ie 'fgt1b.lic, prefix/fgt2b.lic' for Fgt1b-us-east-1a, Fgt2b-us-east-1b) (Min 2, Max 6)"
 		},
 		"FortiFlexTokensFor1stFgtPerAZ": {
 			"Type": "CommaDelimitedList",
-			"Description": "[Flex Only, leave blank otherwise] Provide a list of FortiFlex Tokens for the first Fgts to be deployed in each AZ (ie '1A1A1A1A1A1A1A1A1A1A, 2A2A2A2A2A2A2A2A2A2A' for Fgt1a-us-east-1a, Fgt1b-us-east-1a) (Min 2, Max 6)"
+			"Description": "[Flex Only, leave blank otherwise] Provide a list of FortiFlex Tokens for the first Fgts to be deployed in each AZ (ie '1A1A1A1A1A1A1A1A1A1A, 2A2A2A2A2A2A2A2A2A2A' for Fgt1a-us-east-1a, Fgt2a-us-east-1b) (Min 2, Max 6)"
 		},
 		"FortiFlexTokensFor2ndFgtPerAZ": {
 			"Type": "CommaDelimitedList",
-			"Description": "[Flex Only, leave blank otherwise] Provide a list of FortiFlex Tokens for the second Fgts to be deployed in each AZ (ie '1B1B1B1B1B1B1B1B1B1B, 2B2B2B2B2B2B2B2B2B2B' for Fgt2a-us-east-2b, Fgt2b-us-east-2b) (Min 2, Max 6)"
+			"Description": "[Flex Only, leave blank otherwise] Provide a list of FortiFlex Tokens for the second Fgts to be deployed in each AZ (ie '1B1B1B1B1B1B1B1B1B1B, 2B2B2B2B2B2B2B2B2B2B' for Fgt1b-us-east-2a, Fgt2b-us-east-2b) (Min 2, Max 6)"
 		}
 	},
 	"Mappings": {
