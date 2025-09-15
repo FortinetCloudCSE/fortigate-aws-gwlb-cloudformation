@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v5.5) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
+	"Description": "(v5.6) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -2017,6 +2017,7 @@
 										"ec2:DescribeImages",
 										"ec2:DescribeNetworkInterfaces",
 										"ec2:DescribeTransitGatewayVpcAttachments",
+										"ec2:DescribeTransitGatewayConnectPeers",
 										"ec2:DescribeVpcEndpointServiceConfigurations",
 										"ec2:DescribeVpcEndpointServicePermissions",
 										"ec2:DescribeVpcEndpointServices",
@@ -2093,7 +2094,7 @@
 						]
 					}
 				},
-				"Runtime": "python3.9",
+				"Runtime": "python3.12",
 				"Timeout": 150
 			}
 		},
@@ -2330,7 +2331,7 @@
 						]
 					}
 				},
-				"Runtime": "python3.9",
+				"Runtime": "python3.12",
 				"Timeout": 150
 			}
 		},
@@ -3286,7 +3287,7 @@
 						]
 					}
 				},
-				"Runtime": "python3.9",
+				"Runtime": "python3.12",
 				"Timeout": 30
 			}
 		},
@@ -7247,7 +7248,7 @@
 						]
 					}
 				},
-				"Runtime": "python3.9",
+				"Runtime": "python3.12",
 				"Timeout": 150
 			}
 		},
@@ -7492,7 +7493,7 @@
 				},
 				"Timeout": 120,
 				"Handler": "index.handler",
-				"Runtime": "python3.9",
+				"Runtime": "python3.12",
 				"MemorySize": 128
 			}
 		},
@@ -7778,7 +7779,7 @@
 																"set remote-ip ",
 																{
 																	"Fn::Select": [
-																		"5",
+																		"4",
 																		{
 																			"Fn::GetAtt": [
 																				"RunDescribeGwlbEni",
@@ -8199,7 +8200,7 @@
 				},
 				"Timeout": 120,
 				"Handler": "index.handler",
-				"Runtime": "python3.9",
+				"Runtime": "python3.12",
 				"MemorySize": 128
 			}
 		},
