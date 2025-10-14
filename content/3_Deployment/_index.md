@@ -27,11 +27,11 @@ Once the prerequisites have been satisfied proceed with the deployment steps bel
 
 	![](deploy3.png)
 
-5.  On the Specify Details page, you will be prompted for a stack name and parameters for the deployment.  We are using the **'SecurityVPC_FGT_GWLB_MultiAZ.template.json'** template which deploys a new VPC, gives options for TGW integration, and deploys multiple FGTs as well.
+5.  On the Specify Details page, you will be prompted for a stack name and parameters for the deployment.  We are using the **'NewVPC_FGT_GWLB_MultiAZ.template.json'** template which deploys a new VPC, gives options for TGW or CWAN integration, and deploys multiple FGTs as well.
 
 	![](deploy4a.png)
 	
-	{{% notice tip %}}We are choosing to deploy TGW so we have set both **'TgwAttach'** and **'TgwCreation'** to **'Yes'** and setting the **tgw route to 0.0.0.0/0 for centralized egress and east/west**.  Note you can also attach to an existing TGW by changing 'TgwCreation' to 'No' and providing the appropriate values for the 'TgwExisting...' parameters.{{% /notice %}}
+	{{% notice tip %}}We are choosing to deploy TGW so we have set both **'Attachment'** and **'TgwCreation'** to **'Yes'**.  We also set **'CwanCreation'** to **'NO'**.  Note you can also attach to an existing TGW by changing 'TgwCreation' to 'No' and providing the appropriate values for the 'TgwExisting...' parameters.  The same applies for an existing CWAN using 'CwanExisting...' parameters.{{% /notice %}}
 
 	![](deploy4b.png)
 
@@ -49,7 +49,7 @@ Once the prerequisites have been satisfied proceed with the deployment steps bel
 
      ![](deploy7.png)
 
-9.  Once the stack creation has completed successfully, select the Outputs tab to get the login information for the FGT instances.  If you chose to deploy a new TGW as part of the deployment you will see the IDs of your Transit Gateway and TGW Route Tables.  These will be used as inputs for the **'SpokeVPC_TGW_MultiAZ.template.json'** template.
+9.  Once the stack creation has completed successfully, select the Outputs tab to get the login information for the FGT instances.  If you chose to deploy a new TGW as part of the deployment you will see the IDs of your Transit Gateway and TGW Route Tables.  These will be used as inputs for the **'NewVPC_Spoke_GWLBe_MultiAZ.template.json'** template.
 
      ![](deploy8a.png)
      ![](deploy8b.png)

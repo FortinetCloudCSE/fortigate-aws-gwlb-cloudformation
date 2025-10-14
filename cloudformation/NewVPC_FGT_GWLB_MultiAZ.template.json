@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v5.6) Deploy a security VPC for a FGT & GWLB design with 8 subnets (Public, Private, Gwlb, and TgwAttach) across 2x Availability Zones.",
+	"Description": "(v15.0) Deploy a multi AZ A-A solution,repo: https://github.com/FortinetCloudCSE/fortigate-aws-gwlb-cloudformation",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -15,8 +15,8 @@
 						"PublicSubnetCIDRs",
 						"PrivateSubnetCIDRs",
 						"GwlbSubnetCIDRs",
-						"TgwAttachSubnetCIDRs",
-						"TgwAttach"
+						"AttachmentSubnetCIDRs",
+						"Attachment"
 					]
 				},
 				{
@@ -29,6 +29,17 @@
 						"TgwExistingSecurityTgwRtb",
 						"TgwExistingSpokeTgwRtb",
 						"TgwExistingSpokeTgwRtbRoute"
+					]
+				},
+				{
+					"Label": {
+						"default": "CWAN Configuration"
+					},
+					"Parameters": [
+						"CwanCreation",
+						"CwanExisting",
+						"CwanExistingSegmentKey",
+						"CwanExistingSegmentValue"
 					]
 				},
 				{
@@ -57,7 +68,9 @@
 		"VPCCIDR": {
 			"Type": "String",
 			"Default": "10.0.0.0/16",
-			"Description": "Provide a network CIDR for the VPC"
+			"Description": "Provide a network CIDR for the VPC",
+			"AllowedPattern": "(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}",
+			"ConstraintDescription": "Must be a valid CIDR block format."
 		},
 		"NumOfAZs": {
 			"Type": "String",
@@ -90,14 +103,14 @@
 			"Default": "10.0.5.0/24, 10.0.6.0/24",
 			"Description": "Provide a list of network CIDRs for GLWB Subnets (Min 2, Max 6)"
 		},
-		"TgwAttachSubnetCIDRs": {
+		"AttachmentSubnetCIDRs": {
 			"Type": "CommaDelimitedList",
 			"Default": "10.0.7.0/24, 10.0.8.0/24",
 			"Description": "Provide a list of network CIDRs for TGW Attachment Subnets (Min 2, Max 6)"
 		},
-		"TgwAttach": {
+		"Attachment": {
 			"Type": "String",
-			"Description": "Select Yes if you plan to attach this VPC to Transit GW with a VPC attachment, otherwise select No",
+			"Description": "Select Yes if you plan to attach this VPC to Transit GW or Cloud WAN with a VPC attachment, otherwise select No",
 			"AllowedValues": [
 				"Yes",
 				"No"
@@ -128,6 +141,26 @@
 			"Default": "10.0.0.0/8",
 			"Description": "[Ignore if an existing TGW will not be used] If you are using an existing Transit GW, provide a network CIDR to create a route in your Transit GW RouteTable that your spoke VPCs are associated with"
 		},
+		"CwanCreation": {
+			"Type": "String",
+			"Description": "Select Yes if you want to deploy a new Cloud WAN network with production, development, sharedservices, and firewall segments",
+			"AllowedValues": [
+				"Yes",
+				"No"
+			]
+		},
+		"CwanExisting": {
+			"Type": "String",
+			"Description": "[Leave blank if an existing Cwan will not be used] If you are using an existing Cloud WAN, provide the Cloud WAN Core Network ID to create VPC routes to reach it"
+		},
+		"CwanExistingSegmentKey": {
+			"Type": "String",
+			"Description": "[Leave blank if an existing Cwan will not be used] Provide the name that should be used to create a Tag on the Cwan VPC Attachment to allow CWAN attachment automation"
+		},
+		"CwanExistingSegmentValue": {
+			"Type": "String",
+			"Description": "[Leave blank if an existing Cwan will not be used] Provide the value that should be used to create a Tag on the Cwan VPC Attachment to allow CWAN attachment automation"
+		},
 		"NumOfFgtsPerAZ": {
 			"Type": "String",
 			"Default": "1",
@@ -142,7 +175,7 @@
 			"Default": "c6i.xlarge",
 			"Description": "Select the instance type for the FortiGates",
 			"AllowedValues": [
-				"c4.large",
+				"c4.xlarge",
 				"c5.large",
 				"c5.xlarge",
 				"c5.2xlarge",
@@ -197,7 +230,9 @@
 		"CIDRForInstanceAccess": {
 			"Type": "String",
 			"Default": "0.0.0.0/0",
-			"Description": "Provide a network CIDR from which the FortiGate instances will be accessed"
+			"Description": "Provide a network CIDR from which the FortiGate instances will be accessed",
+			"AllowedPattern": "(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}",
+			"ConstraintDescription": "Must be a valid CIDR block format."
 		},
 		"KeyPair": {
 			"Type": "AWS::EC2::KeyPair::KeyName",
@@ -217,12 +252,12 @@
 		},
 		"FortiOSVersion": {
 			"Type": "String",
-			"Default": "7.2.x",
+			"Default": "7.4.x",
 			"Description": "Select the version of FortiOS to use (latest GA AMI will be used)",
 			"AllowedValues": [
-				"7.0.x",
 				"7.2.x",
-				"7.4.x"
+				"7.4.x",
+				"7.6.x"
 			]
 		},
 		"LicenseType": {
@@ -253,16 +288,6 @@
 	},
 	"Mappings": {
 		"FortiOSIntelAMISearchString": {
-			"6.4.x": {
-				"BYOL": "FortiGate-VM64-AWS *(6.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
-				"Flex": "FortiGate-VM64-AWS *(6.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
-				"PAYG": "FortiGate-VM64-AWSONDEMAND *(6.4.*)*|2wqkpek696qhdeo7lbbjncqli"
-			},
-			"7.0.x": {
-				"BYOL": "FortiGate-VM64-AWS *(7.0.*)*|dlaioq277sglm5mw1y1dmeuqa",
-				"Flex": "FortiGate-VM64-AWS *(7.0.*)*|dlaioq277sglm5mw1y1dmeuqa",
-				"PAYG": "FortiGate-VM64-AWSONDEMAND *(7.0.*)*|2wqkpek696qhdeo7lbbjncqli"
-			},
 			"7.2.x": {
 				"BYOL": "FortiGate-VM64-AWS *(7.2.*)*|dlaioq277sglm5mw1y1dmeuqa",
 				"Flex": "FortiGate-VM64-AWS *(7.2.*)*|dlaioq277sglm5mw1y1dmeuqa",
@@ -272,19 +297,14 @@
 				"BYOL": "FortiGate-VM64-AWS *(7.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
 				"Flex": "FortiGate-VM64-AWS *(7.4.*)*|dlaioq277sglm5mw1y1dmeuqa",
 				"PAYG": "FortiGate-VM64-AWSONDEMAND *(7.4.*)*|2wqkpek696qhdeo7lbbjncqli"
+			},
+			"7.6.x": {
+				"BYOL": "FortiGate-VM64-AWS *(7.6.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"Flex": "FortiGate-VM64-AWS *(7.6.*)*|dlaioq277sglm5mw1y1dmeuqa",
+				"PAYG": "FortiGate-VM64-AWSONDEMAND *(7.6.*)*|2wqkpek696qhdeo7lbbjncqli"
 			}
 		},
 		"FortiOSArmAMISearchString": {
-			"6.4.x": {
-				"BYOL": "FortiGate-VMARM64-AWS *(6.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
-				"Flex": "FortiGate-VMARM64-AWS *(6.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
-				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(6.4.*)*|8gc40z1w65qjt61p9ps88057n"
-			},
-			"7.0.x": {
-				"BYOL": "FortiGate-VMARM64-AWS *(7.0.*)*|33ndn84xbrajb9vmu5lxnfpjq",
-				"Flex": "FortiGate-VMARM64-AWS *(7.0.*)*|33ndn84xbrajb9vmu5lxnfpjq",
-				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(7.0.*)*|8gc40z1w65qjt61p9ps88057n"
-			},
 			"7.2.x": {
 				"BYOL": "FortiGate-VMARM64-AWS *(7.2.*)*|33ndn84xbrajb9vmu5lxnfpjq",
 				"Flex": "FortiGate-VMARM64-AWS *(7.2.*)*|33ndn84xbrajb9vmu5lxnfpjq",
@@ -294,6 +314,11 @@
 				"BYOL": "FortiGate-VMARM64-AWS *(7.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
 				"Flex": "FortiGate-VMARM64-AWS *(7.4.*)*|33ndn84xbrajb9vmu5lxnfpjq",
 				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(7.4.*)*|8gc40z1w65qjt61p9ps88057n"
+			},
+			"7.6.x": {
+				"BYOL": "FortiGate-VMARM64-AWS *(7.6.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"Flex": "FortiGate-VMARM64-AWS *(7.6.*)*|33ndn84xbrajb9vmu5lxnfpjq",
+				"PAYG": "FortiGate-VMARM64-AWSONDEMAND *(7.6.*)*|8gc40z1w65qjt61p9ps88057n"
 			}
 		}
 	},
@@ -454,51 +479,51 @@
 				}
 			]
 		},
-		"CreateTgwAttachSubnets": {
+		"CreateAttachmentSubnets": {
 			"Fn::Equals": [
 				{
-					"Ref": "TgwAttach"
+					"Ref": "Attachment"
 				},
 				"Yes"
 			]
 		},
-		"3AZs+AndCreateTgwAttachSubnets": {
+		"3AZs+AndCreateAttachmentSubnets": {
 			"Fn::And": [
 				{
 					"Condition": "3AZs+"
 				},
 				{
-					"Condition": "CreateTgwAttachSubnets"
+					"Condition": "CreateAttachmentSubnets"
 				}
 			]
 		},
-		"4AZs+AndCreateTgwAttachSubnets": {
+		"4AZs+AndCreateAttachmentSubnets": {
 			"Fn::And": [
 				{
 					"Condition": "4AZs+"
 				},
 				{
-					"Condition": "CreateTgwAttachSubnets"
+					"Condition": "CreateAttachmentSubnets"
 				}
 			]
 		},
-		"5AZs+AndCreateTgwAttachSubnets": {
+		"5AZs+AndCreateAttachmentSubnets": {
 			"Fn::And": [
 				{
 					"Condition": "5AZs+"
 				},
 				{
-					"Condition": "CreateTgwAttachSubnets"
+					"Condition": "CreateAttachmentSubnets"
 				}
 			]
 		},
-		"6AZsAndCreateTgwAttachSubnets": {
+		"6AZsAndCreateAttachmentSubnets": {
 			"Fn::And": [
 				{
 					"Condition": "6AZs"
 				},
 				{
-					"Condition": "CreateTgwAttachSubnets"
+					"Condition": "CreateAttachmentSubnets"
 				}
 			]
 		},
@@ -522,13 +547,87 @@
 				}
 			]
 		},
-		"CreateAttachments": {
-			"Fn::Or": [
+		"CreateCwan": {
+			"Fn::And": [
 				{
-					"Condition": "CreateTgw"
+					"Fn::Equals": [
+						{
+							"Ref": "CwanCreation"
+						},
+						"Yes"
+					]
 				},
 				{
-					"Condition": "ExistingTGW"
+					"Fn::Equals": [
+						{
+							"Ref": "Attachment"
+						},
+						"Yes"
+					]
+				},
+				{
+					"Fn::Equals": [
+						{
+							"Ref": "TgwCreation"
+						},
+						"No"
+					]
+				}
+			]
+		},
+		"ExistingCwan": {
+			"Fn::And": [
+				{
+					"Fn::Not": [
+						{
+							"Fn::Equals": [
+								{
+									"Ref": "CwanExisting"
+								},
+								""
+							]
+						}
+					]
+				},
+				{
+					"Fn::Not": [
+						{
+							"Fn::Equals": [
+								{
+									"Ref": "CwanExistingSegmentKey"
+								},
+								""
+							]
+						}
+					]
+				},
+				{
+					"Fn::Not": [
+						{
+							"Fn::Equals": [
+								{
+									"Ref": "CwanExistingSegmentValue"
+								},
+								""
+							]
+						}
+					]
+				},
+				{
+					"Fn::Equals": [
+						{
+							"Ref": "CwanCreation"
+						},
+						"No"
+					]
+				},
+				{
+					"Fn::Equals": [
+						{
+							"Ref": "TgwCreation"
+						},
+						"No"
+					]
 				}
 			]
 		},
@@ -638,21 +737,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"VPC"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-VPC"
 						}
 					}
 				]
 			}
 		},
-		"PublicSub1": {
+		"PublicSubnet1": {
 			"Type": "AWS::EC2::Subnet",
 			"Properties": {
 				"VpcId": {
@@ -678,21 +769,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PublicSubnet1"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PublicSubnet1"
 						}
 					}
 				]
 			}
 		},
-		"PublicSub2": {
+		"PublicSubnet2": {
 			"Type": "AWS::EC2::Subnet",
 			"Properties": {
 				"VpcId": {
@@ -718,21 +801,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PublicSubnet2"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PublicSubnet2"
 						}
 					}
 				]
 			}
 		},
-		"PublicSub3": {
+		"PublicSubnet3": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "3AZs+",
 			"Properties": {
@@ -759,21 +834,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PublicSubnet3"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PublicSubnet3"
 						}
 					}
 				]
 			}
 		},
-		"PublicSub4": {
+		"PublicSubnet4": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "4AZs+",
 			"Properties": {
@@ -800,21 +867,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PublicSubnet4"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PublicSubnet4"
 						}
 					}
 				]
 			}
 		},
-		"PublicSub5": {
+		"PublicSubnet5": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "5AZs+",
 			"Properties": {
@@ -841,21 +900,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PublicSubnet5"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PublicSubnet5"
 						}
 					}
 				]
 			}
 		},
-		"PublicSub6": {
+		"PublicSubnet6": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "6AZs",
 			"Properties": {
@@ -882,21 +933,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PublicSubnet6"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PublicSubnet6"
 						}
 					}
 				]
 			}
 		},
-		"PrivateSub1": {
+		"PrivateSubnet1": {
 			"Type": "AWS::EC2::Subnet",
 			"Properties": {
 				"VpcId": {
@@ -922,21 +965,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PrivateSubnet1"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PrivateSubnet1"
 						}
 					}
 				]
 			}
 		},
-		"PrivateSub2": {
+		"PrivateSubnet2": {
 			"Type": "AWS::EC2::Subnet",
 			"Properties": {
 				"VpcId": {
@@ -962,21 +997,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PrivateSubnet2"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PrivateSubnet2"
 						}
 					}
 				]
 			}
 		},
-		"PrivateSub3": {
+		"PrivateSubnet3": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "3AZs+",
 			"Properties": {
@@ -1003,21 +1030,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PrivateSubnet3"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PrivateSubnet3"
 						}
 					}
 				]
 			}
 		},
-		"PrivateSub4": {
+		"PrivateSubnet4": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "4AZs+",
 			"Properties": {
@@ -1044,21 +1063,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PrivateSubnet4"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PrivateSubnet4"
 						}
 					}
 				]
 			}
 		},
-		"PrivateSub5": {
+		"PrivateSubnet5": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "5AZs+",
 			"Properties": {
@@ -1085,21 +1096,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PrivateSubnet5"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PrivateSubnet5"
 						}
 					}
 				]
 			}
 		},
-		"PrivateSub6": {
+		"PrivateSubnet6": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "6AZs",
 			"Properties": {
@@ -1126,21 +1129,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PrivateSubnet6"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PrivateSubnet6"
 						}
 					}
 				]
 			}
 		},
-		"GwlbSub1": {
+		"GwlbSubnet1": {
 			"Type": "AWS::EC2::Subnet",
 			"Properties": {
 				"VpcId": {
@@ -1166,21 +1161,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"GwlbSubnet1"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-GwlbSubnet1"
 						}
 					}
 				]
 			}
 		},
-		"GwlbSub2": {
+		"GwlbSubnet2": {
 			"Type": "AWS::EC2::Subnet",
 			"Properties": {
 				"VpcId": {
@@ -1206,21 +1193,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"GwlbSubnet2"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-GwlbSubnet2"
 						}
 					}
 				]
 			}
 		},
-		"GwlbSub3": {
+		"GwlbSubnet3": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "3AZs+",
 			"Properties": {
@@ -1247,21 +1226,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"GwlbSubnet3"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-GwlbSubnet3"
 						}
 					}
 				]
 			}
 		},
-		"GwlbSub4": {
+		"GwlbSubnet4": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "4AZs+",
 			"Properties": {
@@ -1288,21 +1259,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"GwlbSubnet4"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-GwlbSubnet4"
 						}
 					}
 				]
 			}
 		},
-		"GwlbSub5": {
+		"GwlbSubnet5": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "5AZs+",
 			"Properties": {
@@ -1329,21 +1292,13 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"GwlbSubnet5"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-GwlbSubnet5"
 						}
 					}
 				]
 			}
 		},
-		"GwlbSub6": {
+		"GwlbSubnet6": {
 			"Type": "AWS::EC2::Subnet",
 			"Condition": "6AZs",
 			"Properties": {
@@ -1370,23 +1325,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"GwlbSubnet6"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-GwlbSubnet6"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttachSub1": {
+		"AttachmentSubnet1": {
 			"Type": "AWS::EC2::Subnet",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1395,7 +1342,7 @@
 					"Fn::Select": [
 						"0",
 						{
-							"Ref": "TgwAttachSubnetCIDRs"
+							"Ref": "AttachmentSubnetCIDRs"
 						}
 					]
 				},
@@ -1411,23 +1358,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttachSubnet1"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-AttachmentSubnet1"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttachSub2": {
+		"AttachmentSubnet2": {
 			"Type": "AWS::EC2::Subnet",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1436,7 +1375,7 @@
 					"Fn::Select": [
 						"1",
 						{
-							"Ref": "TgwAttachSubnetCIDRs"
+							"Ref": "AttachmentSubnetCIDRs"
 						}
 					]
 				},
@@ -1452,23 +1391,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttachSubnet2"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-AttachmentSubnet2"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttachSub3": {
+		"AttachmentSubnet3": {
 			"Type": "AWS::EC2::Subnet",
-			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"Condition": "3AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1477,7 +1408,7 @@
 					"Fn::Select": [
 						"2",
 						{
-							"Ref": "TgwAttachSubnetCIDRs"
+							"Ref": "AttachmentSubnetCIDRs"
 						}
 					]
 				},
@@ -1493,23 +1424,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttachSubnet3"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-AttachmentSubnet3"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttachSub4": {
+		"AttachmentSubnet4": {
 			"Type": "AWS::EC2::Subnet",
-			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"Condition": "4AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1518,7 +1441,7 @@
 					"Fn::Select": [
 						"3",
 						{
-							"Ref": "TgwAttachSubnetCIDRs"
+							"Ref": "AttachmentSubnetCIDRs"
 						}
 					]
 				},
@@ -1534,23 +1457,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttachSubnet4"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-AttachmentSubnet4"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttachSub5": {
+		"AttachmentSubnet5": {
 			"Type": "AWS::EC2::Subnet",
-			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"Condition": "5AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1559,7 +1474,7 @@
 					"Fn::Select": [
 						"4",
 						{
-							"Ref": "TgwAttachSubnetCIDRs"
+							"Ref": "AttachmentSubnetCIDRs"
 						}
 					]
 				},
@@ -1575,23 +1490,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttachSubnet5"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-AttachmentSubnet5"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttachSub6": {
+		"AttachmentSubnet6": {
 			"Type": "AWS::EC2::Subnet",
-			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"Condition": "6AZsAndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -1600,7 +1507,7 @@
 					"Fn::Select": [
 						"5",
 						{
-							"Ref": "TgwAttachSubnetCIDRs"
+							"Ref": "AttachmentSubnetCIDRs"
 						}
 					]
 				},
@@ -1616,15 +1523,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttachSubnet6"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-AttachmentSubnet6"
 						}
 					}
 				]
@@ -1637,15 +1536,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"IGW"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-IGW"
 						}
 					}
 				]
@@ -1666,29 +1557,21 @@
 			"Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
 			"Properties": {
 				"Name": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"Gwlb"
-						]
-					]
+					"Fn::Sub": "${AWS::StackName}-Gwlb"
 				},
 				"Type": "gateway",
 				"Subnets": [
 					{
-						"Ref": "GwlbSub1"
+						"Ref": "GwlbSubnet1"
 					},
 					{
-						"Ref": "GwlbSub2"
+						"Ref": "GwlbSubnet2"
 					},
 					{
 						"Fn::If": [
 							"3AZs+",
 							{
-								"Ref": "GwlbSub3"
+								"Ref": "GwlbSubnet3"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -1699,7 +1582,7 @@
 						"Fn::If": [
 							"4AZs+",
 							{
-								"Ref": "GwlbSub4"
+								"Ref": "GwlbSubnet4"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -1710,7 +1593,7 @@
 						"Fn::If": [
 							"5AZs+",
 							{
-								"Ref": "GwlbSub5"
+								"Ref": "GwlbSubnet5"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -1721,7 +1604,7 @@
 						"Fn::If": [
 							"6AZs",
 							{
-								"Ref": "GwlbSub6"
+								"Ref": "GwlbSubnet6"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -1739,15 +1622,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Gwlb"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-Gwlb"
 						}
 					}
 				]
@@ -1757,15 +1632,7 @@
 			"Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
 			"Properties": {
 				"Name": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"tg-geneve"
-						]
-					]
+					"Fn::Sub": "${AWS::StackName}-tg-geneve"
 				},
 				"Port": 6081,
 				"Protocol": "GENEVE",
@@ -1933,15 +1800,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"tg-geneve"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-tg-geneve"
 						}
 					}
 				]
@@ -1978,15 +1837,7 @@
 			"Type": "AWS::IAM::Role",
 			"Properties": {
 				"RoleName": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"LambdaRole"
-						]
-					]
+					"Fn::Sub": "${AWS::StackName}-LambdaRole"
 				},
 				"AssumeRolePolicyDocument": {
 					"Version": "2012-10-17",
@@ -2016,12 +1867,6 @@
 									"Action": [
 										"ec2:DescribeImages",
 										"ec2:DescribeNetworkInterfaces",
-										"ec2:DescribeTransitGatewayVpcAttachments",
-										"ec2:DescribeTransitGatewayConnectPeers",
-										"ec2:DescribeVpcEndpointServiceConfigurations",
-										"ec2:DescribeVpcEndpointServicePermissions",
-										"ec2:DescribeVpcEndpointServices",
-										"ec2:ModifyTransitGatewayVpcAttachment",
 										"logs:CreateLogGroup",
 										"logs:CreateLogStream",
 										"logs:PutLogEvents",
@@ -2035,103 +1880,31 @@
 				]
 			}
 		},
-		"DescribeVpceService": {
-			"Type": "AWS::Lambda::Function",
-			"Properties": {
-				"Handler": "index.handler",
-				"Role": {
-					"Fn::GetAtt": [
-						"LambdaRole",
-						"Arn"
-					]
-				},
-				"Code": {
-					"ZipFile": {
-						"Fn::Join": [
-							"\n",
-							[
-								"import boto3",
-								"import cfnresponse",
-								"import logging",
-								"import json",
-								"logger = logging.getLogger()",
-								"logger.setLevel(logging.INFO)",
-								"ec2 = boto3.client('ec2')",
-								"",
-								"def handler(event, context):",
-								"    if event['RequestType'] == 'Create':",
-								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
-								"    else:",
-								"        responseData = {'msg':'200'}",
-								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
-								"        return None",
-								"",
-								"    try:",
-								"        response = ec2.describe_vpc_endpoint_service_configurations(",
-								"                Filters=[",
-								"                    {",
-								"                        'Name': 'service-id',",
-								"                        'Values': [event['ResourceProperties']['VpceServiceId']]",
-								"                    }",
-								"                ]",
-								"            )",
-								"    except Exception as error:",
-								"        logger.error('<--!! Exception: {}'.format(error))",
-								"        responseData = {'msg':'Exception: {}'.format(error)}",
-								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
-								"",
-								"    if response['ResponseMetadata']['HTTPStatusCode'] == 200 and response['ServiceConfigurations'] != []:",
-								"        service_name = response['ServiceConfigurations'][0]['ServiceName']",
-								"        logger.info('--> found vpce service name: {}'.format(service_name))",
-								"        responseData = {'ServiceName': service_name}",
-								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
-								"    else:",
-								"        logger.error('!!--> Unable to find vpce service name in response! {}'.format(response))",
-								"        responseData = {'msg':'error'}",
-								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
-								""
-							]
-						]
-					}
-				},
-				"Runtime": "python3.12",
-				"Timeout": 150
-			}
-		},
-		"RunDescribeVpceService": {
-			"Type": "Custom::DescribeVpceService",
-			"Properties": {
-				"ServiceToken": {
-					"Fn::GetAtt": [
-						"DescribeVpceService",
-						"Arn"
-					]
-				},
-				"VpceServiceId": {
-					"Ref": "VpcEndpointService"
-				}
-			}
-		},
 		"GwlbEndpoint1": {
 			"Type": "AWS::EC2::VPCEndpoint",
 			"DependsOn": [
 				"Gwlb",
-				"RunDescribeVpceService"
+				"VpcEndpointService"
 			],
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
 				},
 				"ServiceName": {
-					"Fn::GetAtt": [
-						"RunDescribeVpceService",
-						"ServiceName"
-					]
+					"Fn::Sub": "com.amazonaws.vpce.${AWS::Region}.${VpcEndpointService}"
 				},
 				"VpcEndpointType": "GatewayLoadBalancer",
 				"SubnetIds": [
 					{
-						"Ref": "GwlbSub1"
+						"Ref": "GwlbSubnet1"
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-GwlbEndpoint1"
+						}
 					}
 				]
 			}
@@ -2140,22 +1913,27 @@
 			"Type": "AWS::EC2::VPCEndpoint",
 			"DependsOn": [
 				"Gwlb",
-				"RunDescribeVpceService"
+				"VpcEndpointService"
 			],
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
 				},
 				"ServiceName": {
-					"Fn::GetAtt": [
-						"RunDescribeVpceService",
-						"ServiceName"
-					]
+					"Fn::Sub": "com.amazonaws.vpce.${AWS::Region}.${VpcEndpointService}"
 				},
 				"VpcEndpointType": "GatewayLoadBalancer",
 				"SubnetIds": [
 					{
-						"Ref": "GwlbSub2"
+						"Ref": "GwlbSubnet2"
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-GwlbEndpoint2"
+						}
 					}
 				]
 			}
@@ -2165,22 +1943,27 @@
 			"Condition": "3AZs+",
 			"DependsOn": [
 				"Gwlb",
-				"RunDescribeVpceService"
+				"VpcEndpointService"
 			],
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
 				},
 				"ServiceName": {
-					"Fn::GetAtt": [
-						"RunDescribeVpceService",
-						"ServiceName"
-					]
+					"Fn::Sub": "com.amazonaws.vpce.${AWS::Region}.${VpcEndpointService}"
 				},
 				"VpcEndpointType": "GatewayLoadBalancer",
 				"SubnetIds": [
 					{
-						"Ref": "GwlbSub3"
+						"Ref": "GwlbSubnet3"
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-GwlbEndpoint3"
+						}
 					}
 				]
 			}
@@ -2190,22 +1973,27 @@
 			"Condition": "4AZs+",
 			"DependsOn": [
 				"Gwlb",
-				"RunDescribeVpceService"
+				"VpcEndpointService"
 			],
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
 				},
 				"ServiceName": {
-					"Fn::GetAtt": [
-						"RunDescribeVpceService",
-						"ServiceName"
-					]
+					"Fn::Sub": "com.amazonaws.vpce.${AWS::Region}.${VpcEndpointService}"
 				},
 				"VpcEndpointType": "GatewayLoadBalancer",
 				"SubnetIds": [
 					{
-						"Ref": "GwlbSub4"
+						"Ref": "GwlbSubnet4"
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-GwlbEndpoint4"
+						}
 					}
 				]
 			}
@@ -2215,22 +2003,27 @@
 			"Condition": "5AZs+",
 			"DependsOn": [
 				"Gwlb",
-				"RunDescribeVpceService"
+				"VpcEndpointService"
 			],
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
 				},
 				"ServiceName": {
-					"Fn::GetAtt": [
-						"RunDescribeVpceService",
-						"ServiceName"
-					]
+					"Fn::Sub": "com.amazonaws.vpce.${AWS::Region}.${VpcEndpointService}"
 				},
 				"VpcEndpointType": "GatewayLoadBalancer",
 				"SubnetIds": [
 					{
-						"Ref": "GwlbSub5"
+						"Ref": "GwlbSubnet5"
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-GwlbEndpoint5"
+						}
 					}
 				]
 			}
@@ -2240,22 +2033,27 @@
 			"Condition": "6AZs",
 			"DependsOn": [
 				"Gwlb",
-				"RunDescribeVpceService"
+				"VpcEndpointService"
 			],
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
 				},
 				"ServiceName": {
-					"Fn::GetAtt": [
-						"RunDescribeVpceService",
-						"ServiceName"
-					]
+					"Fn::Sub": "com.amazonaws.vpce.${AWS::Region}.${VpcEndpointService}"
 				},
 				"VpcEndpointType": "GatewayLoadBalancer",
 				"SubnetIds": [
 					{
-						"Ref": "GwlbSub6"
+						"Ref": "GwlbSubnet6"
+					}
+				],
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-GwlbEndpoint6"
+						}
 					}
 				]
 			}
@@ -2360,16 +2158,16 @@
 				},
 				"Subnets": [
 					{
-						"Ref": "GwlbSub1"
+						"Ref": "GwlbSubnet1"
 					},
 					{
-						"Ref": "GwlbSub2"
+						"Ref": "GwlbSubnet2"
 					},
 					{
 						"Fn::If": [
 							"3AZs+",
 							{
-								"Ref": "GwlbSub3"
+								"Ref": "GwlbSubnet3"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2380,7 +2178,7 @@
 						"Fn::If": [
 							"4AZs+",
 							{
-								"Ref": "GwlbSub4"
+								"Ref": "GwlbSubnet4"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2391,7 +2189,7 @@
 						"Fn::If": [
 							"5AZs+",
 							{
-								"Ref": "GwlbSub5"
+								"Ref": "GwlbSubnet5"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2402,7 +2200,7 @@
 						"Fn::If": [
 							"6AZs",
 							{
-								"Ref": "GwlbSub6"
+								"Ref": "GwlbSubnet6"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2426,15 +2224,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TGW"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-TGW"
 						}
 					}
 				]
@@ -2446,16 +2236,16 @@
 			"Properties": {
 				"SubnetIds": [
 					{
-						"Ref": "TgwAttachSub1"
+						"Ref": "AttachmentSubnet1"
 					},
 					{
-						"Ref": "TgwAttachSub2"
+						"Ref": "AttachmentSubnet2"
 					},
 					{
 						"Fn::If": [
 							"3AZs+",
 							{
-								"Ref": "TgwAttachSub3"
+								"Ref": "AttachmentSubnet3"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2466,7 +2256,7 @@
 						"Fn::If": [
 							"4AZs+",
 							{
-								"Ref": "TgwAttachSub4"
+								"Ref": "AttachmentSubnet4"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2477,7 +2267,7 @@
 						"Fn::If": [
 							"5AZs+",
 							{
-								"Ref": "TgwAttachSub5"
+								"Ref": "AttachmentSubnet5"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2488,7 +2278,7 @@
 						"Fn::If": [
 							"6AZs",
 							{
-								"Ref": "TgwAttachSub6"
+								"Ref": "AttachmentSubnet6"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -2502,19 +2292,14 @@
 				"VpcId": {
 					"Ref": "VPC"
 				},
+				"Options": {
+					"ApplianceModeSupport": "enable"
+				},
 				"Tags": [
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"security-vpc-attachment"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-vpc-attachment"
 						}
 					}
 				]
@@ -2531,15 +2316,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"security-tgw-rtb"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-security-tgw-rtb"
 						}
 					}
 				]
@@ -2556,15 +2333,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"spoke-tgw-rtb"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-spoke-tgw-rtb"
 						}
 					}
 				]
@@ -2605,15 +2374,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PublicRouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PublicRouteTable"
 						}
 					}
 				]
@@ -2629,15 +2390,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"PrivateRouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-PrivateRouteTable"
 						}
 					}
 				]
@@ -2653,23 +2406,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"GwlbRouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-GwlbRouteTable"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttach1RouteTable": {
+		"Attachment1RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -2678,23 +2423,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttach1RouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-Attachment1RouteTable"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttach2RouteTable": {
+		"Attachment2RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -2703,23 +2440,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttach2RouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-Attachment2RouteTable"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttach3RouteTable": {
+		"Attachment3RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"Condition": "3AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -2728,23 +2457,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttach3RouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-Attachment3RouteTable"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttach4RouteTable": {
+		"Attachment4RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"Condition": "4AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -2753,23 +2474,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttach4RouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-Attachment4RouteTable"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttach5RouteTable": {
+		"Attachment5RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"Condition": "5AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -2778,23 +2491,15 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttach5RouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-Attachment5RouteTable"
 						}
 					}
 				]
 			}
 		},
-		"TgwAttach6RouteTable": {
+		"Attachment6RouteTable": {
 			"Type": "AWS::EC2::RouteTable",
-			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"Condition": "6AZsAndCreateAttachmentSubnets",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -2803,15 +2508,7 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"TgwAttach6RouteTable"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-Attachment6RouteTable"
 						}
 					}
 				]
@@ -2868,11 +2565,115 @@
 		},
 		"Route4": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateCwan",
+			"DependsOn": "CloudWanVpcAttachment",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"CoreNetworkArn": {
+					"Fn::Join": [
+						"",
+						[
+							"arn:aws:networkmanager::",
+							{
+								"Ref": "AWS::AccountId"
+							},
+							":core-network/",
+							{
+								"Ref": "CoreNetwork"
+							}
+						]
+					]
+				}
+			}
+		},
+		"Route5": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "CreateCwan",
+			"DependsOn": "CloudWanVpcAttachment",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"CoreNetworkArn": {
+					"Fn::Join": [
+						"",
+						[
+							"arn:aws:networkmanager::",
+							{
+								"Ref": "AWS::AccountId"
+							},
+							":core-network/",
+							{
+								"Ref": "CoreNetwork"
+							}
+						]
+					]
+				}
+			}
+		},
+		"Route6": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "ExistingCwan",
+			"DependsOn": "ExistingCloudWanVpcAttachment",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "PrivateRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"CoreNetworkArn": {
+					"Fn::Join": [
+						"",
+						[
+							"arn:aws:networkmanager::",
+							{
+								"Ref": "AWS::AccountId"
+							},
+							":core-network/",
+							{
+								"Ref": "CwanExisting"
+							}
+						]
+					]
+				}
+			}
+		},
+		"Route7": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "ExistingCwan",
+			"DependsOn": "ExistingCloudWanVpcAttachment",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "GwlbRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"CoreNetworkArn": {
+					"Fn::Join": [
+						"",
+						[
+							"arn:aws:networkmanager::",
+							{
+								"Ref": "AWS::AccountId"
+							},
+							":core-network/",
+							{
+								"Ref": "CwanExisting"
+							}
+						]
+					]
+				}
+			}
+		},
+		"Route8": {
+			"Type": "AWS::EC2::Route",
+			"Condition": "CreateAttachmentSubnets",
 			"DependsOn": "GwlbEndpoint1",
 			"Properties": {
 				"RouteTableId": {
-					"Ref": "TgwAttach1RouteTable"
+					"Ref": "Attachment1RouteTable"
 				},
 				"DestinationCidrBlock": "0.0.0.0/0",
 				"VpcEndpointId": {
@@ -2880,13 +2681,13 @@
 				}
 			}
 		},
-		"Route5": {
+		"Route9": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateAttachmentSubnets",
 			"DependsOn": "GwlbEndpoint2",
 			"Properties": {
 				"RouteTableId": {
-					"Ref": "TgwAttach2RouteTable"
+					"Ref": "Attachment2RouteTable"
 				},
 				"DestinationCidrBlock": "0.0.0.0/0",
 				"VpcEndpointId": {
@@ -2894,13 +2695,13 @@
 				}
 			}
 		},
-		"Route6": {
+		"Route10": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"Condition": "3AZs+AndCreateAttachmentSubnets",
 			"DependsOn": "GwlbEndpoint3",
 			"Properties": {
 				"RouteTableId": {
-					"Ref": "TgwAttach3RouteTable"
+					"Ref": "Attachment3RouteTable"
 				},
 				"DestinationCidrBlock": "0.0.0.0/0",
 				"VpcEndpointId": {
@@ -2908,13 +2709,13 @@
 				}
 			}
 		},
-		"Route7": {
+		"Route11": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"Condition": "4AZs+AndCreateAttachmentSubnets",
 			"DependsOn": "GwlbEndpoint4",
 			"Properties": {
 				"RouteTableId": {
-					"Ref": "TgwAttach4RouteTable"
+					"Ref": "Attachment4RouteTable"
 				},
 				"DestinationCidrBlock": "0.0.0.0/0",
 				"VpcEndpointId": {
@@ -2922,13 +2723,13 @@
 				}
 			}
 		},
-		"Route8": {
+		"Route12": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"Condition": "5AZs+AndCreateAttachmentSubnets",
 			"DependsOn": "GwlbEndpoint5",
 			"Properties": {
 				"RouteTableId": {
-					"Ref": "TgwAttach5RouteTable"
+					"Ref": "Attachment5RouteTable"
 				},
 				"DestinationCidrBlock": "0.0.0.0/0",
 				"VpcEndpointId": {
@@ -2936,13 +2737,13 @@
 				}
 			}
 		},
-		"Route9": {
+		"Route13": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"Condition": "6AZsAndCreateAttachmentSubnets",
 			"DependsOn": "GwlbEndpoint6",
 			"Properties": {
 				"RouteTableId": {
-					"Ref": "TgwAttach6RouteTable"
+					"Ref": "Attachment6RouteTable"
 				},
 				"DestinationCidrBlock": "0.0.0.0/0",
 				"VpcEndpointId": {
@@ -2954,7 +2755,7 @@
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PublicSub1"
+					"Ref": "PublicSubnet1"
 				},
 				"RouteTableId": {
 					"Ref": "PublicRouteTable"
@@ -2965,7 +2766,7 @@
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PublicSub2"
+					"Ref": "PublicSubnet2"
 				},
 				"RouteTableId": {
 					"Ref": "PublicRouteTable"
@@ -2977,7 +2778,7 @@
 			"Condition": "3AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PublicSub3"
+					"Ref": "PublicSubnet3"
 				},
 				"RouteTableId": {
 					"Ref": "PublicRouteTable"
@@ -2989,7 +2790,7 @@
 			"Condition": "4AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PublicSub4"
+					"Ref": "PublicSubnet4"
 				},
 				"RouteTableId": {
 					"Ref": "PublicRouteTable"
@@ -3001,7 +2802,7 @@
 			"Condition": "5AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PublicSub5"
+					"Ref": "PublicSubnet5"
 				},
 				"RouteTableId": {
 					"Ref": "PublicRouteTable"
@@ -3013,7 +2814,7 @@
 			"Condition": "6AZs",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PublicSub6"
+					"Ref": "PublicSubnet6"
 				},
 				"RouteTableId": {
 					"Ref": "PublicRouteTable"
@@ -3024,7 +2825,7 @@
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PrivateSub1"
+					"Ref": "PrivateSubnet1"
 				},
 				"RouteTableId": {
 					"Ref": "PrivateRouteTable"
@@ -3035,7 +2836,7 @@
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PrivateSub2"
+					"Ref": "PrivateSubnet2"
 				},
 				"RouteTableId": {
 					"Ref": "PrivateRouteTable"
@@ -3047,7 +2848,7 @@
 			"Condition": "3AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PrivateSub3"
+					"Ref": "PrivateSubnet3"
 				},
 				"RouteTableId": {
 					"Ref": "PrivateRouteTable"
@@ -3059,7 +2860,7 @@
 			"Condition": "4AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PrivateSub4"
+					"Ref": "PrivateSubnet4"
 				},
 				"RouteTableId": {
 					"Ref": "PrivateRouteTable"
@@ -3071,7 +2872,7 @@
 			"Condition": "5AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PrivateSub5"
+					"Ref": "PrivateSubnet5"
 				},
 				"RouteTableId": {
 					"Ref": "PrivateRouteTable"
@@ -3083,7 +2884,7 @@
 			"Condition": "6AZs",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "PrivateSub6"
+					"Ref": "PrivateSubnet6"
 				},
 				"RouteTableId": {
 					"Ref": "PrivateRouteTable"
@@ -3094,7 +2895,7 @@
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "GwlbSub1"
+					"Ref": "GwlbSubnet1"
 				},
 				"RouteTableId": {
 					"Ref": "GwlbRouteTable"
@@ -3105,7 +2906,7 @@
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "GwlbSub2"
+					"Ref": "GwlbSubnet2"
 				},
 				"RouteTableId": {
 					"Ref": "GwlbRouteTable"
@@ -3117,7 +2918,7 @@
 			"Condition": "3AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "GwlbSub3"
+					"Ref": "GwlbSubnet3"
 				},
 				"RouteTableId": {
 					"Ref": "GwlbRouteTable"
@@ -3129,7 +2930,7 @@
 			"Condition": "4AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "GwlbSub4"
+					"Ref": "GwlbSubnet4"
 				},
 				"RouteTableId": {
 					"Ref": "GwlbRouteTable"
@@ -3141,7 +2942,7 @@
 			"Condition": "5AZs+",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "GwlbSub5"
+					"Ref": "GwlbSubnet5"
 				},
 				"RouteTableId": {
 					"Ref": "GwlbRouteTable"
@@ -3153,176 +2954,83 @@
 			"Condition": "6AZs",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "GwlbSub6"
+					"Ref": "GwlbSubnet6"
 				},
 				"RouteTableId": {
 					"Ref": "GwlbRouteTable"
 				}
 			}
 		},
-		"TgwAttachSubnetRouteTableAssoc1": {
+		"AttachmentSubnetRouteTableAssoc1": {
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateAttachmentSubnets",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "TgwAttachSub1"
+					"Ref": "AttachmentSubnet1"
 				},
 				"RouteTableId": {
-					"Ref": "TgwAttach1RouteTable"
+					"Ref": "Attachment1RouteTable"
 				}
 			}
 		},
-		"TgwAttachSubnetRouteTableAssoc2": {
+		"AttachmentSubnetRouteTableAssoc2": {
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
-			"Condition": "CreateTgwAttachSubnets",
+			"Condition": "CreateAttachmentSubnets",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "TgwAttachSub2"
+					"Ref": "AttachmentSubnet2"
 				},
 				"RouteTableId": {
-					"Ref": "TgwAttach2RouteTable"
+					"Ref": "Attachment2RouteTable"
 				}
 			}
 		},
-		"TgwAttachSubnetRouteTableAssoc3": {
+		"AttachmentSubnetRouteTableAssoc3": {
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
-			"Condition": "3AZs+AndCreateTgwAttachSubnets",
+			"Condition": "3AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "TgwAttachSub3"
+					"Ref": "AttachmentSubnet3"
 				},
 				"RouteTableId": {
-					"Ref": "TgwAttach3RouteTable"
+					"Ref": "Attachment3RouteTable"
 				}
 			}
 		},
-		"TgwAttachSubnetRouteTableAssoc4": {
+		"AttachmentSubnetRouteTableAssoc4": {
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
-			"Condition": "4AZs+AndCreateTgwAttachSubnets",
+			"Condition": "4AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "TgwAttachSub4"
+					"Ref": "AttachmentSubnet4"
 				},
 				"RouteTableId": {
-					"Ref": "TgwAttach4RouteTable"
+					"Ref": "Attachment4RouteTable"
 				}
 			}
 		},
-		"TgwAttachSubnetRouteTableAssoc5": {
+		"AttachmentSubnetRouteTableAssoc5": {
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
-			"Condition": "5AZs+AndCreateTgwAttachSubnets",
+			"Condition": "5AZs+AndCreateAttachmentSubnets",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "TgwAttachSub5"
+					"Ref": "AttachmentSubnet5"
 				},
 				"RouteTableId": {
-					"Ref": "TgwAttach5RouteTable"
+					"Ref": "Attachment5RouteTable"
 				}
 			}
 		},
-		"TgwAttachSubnetRouteTableAssoc6": {
+		"AttachmentSubnetRouteTableAssoc6": {
 			"Type": "AWS::EC2::SubnetRouteTableAssociation",
-			"Condition": "6AZsAndCreateTgwAttachSubnets",
+			"Condition": "6AZsAndCreateAttachmentSubnets",
 			"Properties": {
 				"SubnetId": {
-					"Ref": "TgwAttachSub6"
+					"Ref": "AttachmentSubnet6"
 				},
 				"RouteTableId": {
-					"Ref": "TgwAttach6RouteTable"
+					"Ref": "Attachment6RouteTable"
 				}
-			}
-		},
-		"TgwApplianceMode": {
-			"Type": "AWS::Lambda::Function",
-			"Properties": {
-				"Handler": "index.handler",
-				"Role": {
-					"Fn::GetAtt": [
-						"LambdaRole",
-						"Arn"
-					]
-				},
-				"Code": {
-					"ZipFile": {
-						"Fn::Join": [
-							"\n",
-							[
-								"import boto3",
-								"import cfnresponse",
-								"import logging",
-								"import json",
-								"logger = logging.getLogger()",
-								"logger.setLevel(logging.INFO)",
-								"ec2 = boto3.client('ec2')",
-								"",
-								"def handler(event, context):",
-								"    if event['RequestType'] == 'Create':",
-								"        logger.info('<-- event received: {}'.format(json.dumps(event)))",
-								"    else:",
-								"        responseData = {'msg':'200'}",
-								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
-								"        return None",
-								"",
-								"    try:",
-								"        response = ec2.modify_transit_gateway_vpc_attachment(",
-								"                TransitGatewayAttachmentId = event['ResourceProperties']['TgwInspectionVpcAttachmentId'],",
-								"                Options = {'ApplianceModeSupport': event['ResourceProperties']['ApplianceMode']}",
-								"            )",
-								"    except Exception as error:",
-								"        logger.error('<--!! Exception: {}'.format(error))",
-								"        responseData = {'msg':'Exception: {}'.format(error)}",
-								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
-								"",
-								"    if response['ResponseMetadata']['HTTPStatusCode'] == 200 and response['TransitGatewayVpcAttachment'] != []:",
-								"        tgw_status = response['TransitGatewayVpcAttachment']['Options']['ApplianceModeSupport']",
-								"        logger.info('--> Current Tgw Status: {}'.format(tgw_status))",
-								"        responseData = {'Tgw ApplianceMode Status': tgw_status}",
-								"        cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
-								"    else:",
-								"        logger.error('!!--> Unable to modify Tgw Attachment! {}'.format(response))",
-								"        responseData = {'msg':'error'}",
-								"        cfnresponse.send(event, context, cfnresponse.FAILED, responseData)",
-								""
-							]
-						]
-					}
-				},
-				"Runtime": "python3.12",
-				"Timeout": 30
-			}
-		},
-		"RunTgwApplianceMode": {
-			"Type": "Custom::RunTgwApplianceMode",
-			"Condition": "CreateTgw",
-			"DependsOn": "TransitGatewayRoute1",
-			"Properties": {
-				"ServiceToken": {
-					"Fn::GetAtt": [
-						"TgwApplianceMode",
-						"Arn"
-					]
-				},
-				"TgwInspectionVpcAttachmentId": {
-					"Ref": "TransitGatewaySecurityVpcAttachment"
-				},
-				"ApplianceMode": "enable"
-			}
-		},
-		"RunTgwApplianceModeExisting": {
-			"Type": "Custom::RunTgwApplianceMode",
-			"Condition": "ExistingTGW",
-			"DependsOn": "ExistingTransitGatewayRoute1",
-			"Properties": {
-				"ServiceToken": {
-					"Fn::GetAtt": [
-						"TgwApplianceMode",
-						"Arn"
-					]
-				},
-				"TgwInspectionVpcAttachmentId": {
-					"Ref": "TransitGatewaySecurityVpcAttachment"
-				},
-				"ApplianceMode": "enable"
 			}
 		},
 		"ExistingTransitGatewaySecurityVpcAttachment": {
@@ -3331,16 +3039,16 @@
 			"Properties": {
 				"SubnetIds": [
 					{
-						"Ref": "TgwAttachSub1"
+						"Ref": "AttachmentSubnet1"
 					},
 					{
-						"Ref": "TgwAttachSub2"
+						"Ref": "AttachmentSubnet2"
 					},
 					{
 						"Fn::If": [
 							"3AZs+",
 							{
-								"Ref": "TgwAttachSub3"
+								"Ref": "AttachmentSubnet3"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -3351,7 +3059,7 @@
 						"Fn::If": [
 							"4AZs+",
 							{
-								"Ref": "TgwAttachSub4"
+								"Ref": "AttachmentSubnet4"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -3362,7 +3070,7 @@
 						"Fn::If": [
 							"5AZs+",
 							{
-								"Ref": "TgwAttachSub5"
+								"Ref": "AttachmentSubnet5"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -3373,7 +3081,7 @@
 						"Fn::If": [
 							"6AZs",
 							{
-								"Ref": "TgwAttachSub6"
+								"Ref": "AttachmentSubnet6"
 							},
 							{
 								"Ref": "AWS::NoValue"
@@ -3387,19 +3095,14 @@
 				"VpcId": {
 					"Ref": "VPC"
 				},
+				"Options": {
+					"ApplianceModeSupport": "enable"
+				},
 				"Tags": [
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"security-vpc-attachment"
-								]
-							]
+							"Fn::Sub": "${AWS::StackName}-vpc-attachment"
 						}
 					}
 				]
@@ -3447,6 +3150,354 @@
 				"TransitGatewayId": {
 					"Ref": "TgwExisting"
 				}
+			}
+		},
+		"GlobalNetwork": {
+			"Type": "AWS::NetworkManager::GlobalNetwork",
+			"Condition": "CreateCwan",
+			"Properties": {
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-GlobalNetwork"
+						}
+					}
+				]
+			}
+		},
+		"CoreNetwork": {
+			"Type": "AWS::NetworkManager::CoreNetwork",
+			"Condition": "CreateCwan",
+			"Properties": {
+				"GlobalNetworkId": {
+					"Ref": "GlobalNetwork"
+				},
+				"PolicyDocument": {
+					"version": "2021.12",
+					"core-network-configuration": {
+						"asn-ranges": [
+							"64512-64518"
+						],
+						"edge-locations": [
+							{
+								"location": {
+									"Fn::Sub": "${AWS::Region}"
+								},
+								"asn": 64515
+							}
+						],
+						"vpn-ecmp-support": true
+					},
+					"segments": [
+						{
+							"name": "production",
+							"description": "production-segment",
+							"edge-locations": [
+								{
+									"Ref": "AWS::Region"
+								}
+							],
+							"require-attachment-acceptance": false,
+							"isolate-attachments": false
+						},
+						{
+							"name": "development",
+							"description": "development-segment",
+							"edge-locations": [
+								{
+									"Ref": "AWS::Region"
+								}
+							],
+							"require-attachment-acceptance": false,
+							"isolate-attachments": false
+						},
+						{
+							"name": "sharedservices",
+							"description": "sharedservices-segment",
+							"edge-locations": [
+								{
+									"Ref": "AWS::Region"
+								}
+							],
+							"require-attachment-acceptance": false,
+							"isolate-attachments": false
+						},
+						{
+							"name": "inspection",
+							"description": "ngfw-segment",
+							"edge-locations": [
+								{
+									"Ref": "AWS::Region"
+								}
+							],
+							"require-attachment-acceptance": false,
+							"isolate-attachments": false
+						}
+					],
+					"segment-actions": [
+						{
+							"action": "share",
+							"mode": "attachment-route",
+							"segment": "production",
+							"share-with": [
+								"inspection"
+							]
+						},
+						{
+							"action": "share",
+							"mode": "attachment-route",
+							"segment": "development",
+							"share-with": [
+								"inspection"
+							]
+						},
+						{
+							"action": "share",
+							"mode": "attachment-route",
+							"segment": "sharedservices",
+							"share-with": [
+								"inspection"
+							]
+						}
+					],
+					"attachment-policies": [
+						{
+							"rule-number": 1,
+							"condition-logic": "and",
+							"conditions": [
+								{
+									"type": "tag-value",
+									"key": "segment",
+									"operator": "contains",
+									"value": "production"
+								}
+							],
+							"action": {
+								"association-method": "constant",
+								"segment": "production"
+							}
+						},
+						{
+							"rule-number": 2,
+							"condition-logic": "and",
+							"conditions": [
+								{
+									"type": "tag-value",
+									"key": "segment",
+									"operator": "contains",
+									"value": "development"
+								}
+							],
+							"action": {
+								"association-method": "constant",
+								"segment": "development"
+							}
+						},
+						{
+							"rule-number": 3,
+							"condition-logic": "and",
+							"conditions": [
+								{
+									"type": "tag-value",
+									"key": "segment",
+									"operator": "contains",
+									"value": "sharedservices"
+								}
+							],
+							"action": {
+								"association-method": "constant",
+								"segment": "sharedservices"
+							}
+						},
+						{
+							"rule-number": 4,
+							"condition-logic": "and",
+							"conditions": [
+								{
+									"type": "tag-value",
+									"key": "segment",
+									"operator": "contains",
+									"value": "inspection"
+								}
+							],
+							"action": {
+								"association-method": "constant",
+								"segment": "inspection"
+							}
+						}
+					]
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-CoreNetwork"
+						}
+					}
+				]
+			}
+		},
+		"CloudWanVpcAttachment": {
+			"Type": "AWS::NetworkManager::VpcAttachment",
+			"Condition": "CreateCwan",
+			"Properties": {
+				"CoreNetworkId": {
+					"Ref": "CoreNetwork"
+				},
+				"Options": {
+					"ApplianceModeSupport": "true"
+				},
+				"SubnetArns": [
+					{
+						"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet1}"
+					},
+					{
+						"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet2}"
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet3}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet4}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet5}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet6}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				],
+				"VpcArn": {
+					"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-vpc-attacment"
+						}
+					},
+					{
+						"Key": "segment",
+						"Value": "inspection"
+					}
+				]
+			}
+		},
+		"ExistingCloudWanVpcAttachment": {
+			"Type": "AWS::NetworkManager::VpcAttachment",
+			"Condition": "ExistingCwan",
+			"Properties": {
+				"CoreNetworkId": {
+					"Ref": "CwanExisting"
+				},
+				"Options": {
+					"ApplianceModeSupport": "true"
+				},
+				"SubnetArns": [
+					{
+						"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet1}"
+					},
+					{
+						"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet2}"
+					},
+					{
+						"Fn::If": [
+							"3AZs+",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet3}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"4AZs+",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet4}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"5AZs+",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet5}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					},
+					{
+						"Fn::If": [
+							"6AZs",
+							{
+								"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AttachmentSubnet6}"
+							},
+							{
+								"Ref": "AWS::NoValue"
+							}
+						]
+					}
+				],
+				"VpcArn": {
+					"Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}"
+				},
+				"Tags": [
+					{
+						"Key": "Name",
+						"Value": {
+							"Fn::Sub": "${AWS::StackName}-vpc-attacment"
+						}
+					},
+					{
+						"Key": {
+							"Ref": "CwanExistingSegmentKey"
+						},
+						"Value": {
+							"Ref": "CwanExistingSegmentValue"
+						}
+					}
+				]
 			}
 		},
 		"InstanceRole": {
@@ -3549,22 +3600,18 @@
 			"Type": "AWS::EC2::LaunchTemplate",
 			"Properties": {
 				"LaunchTemplateName": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"fgt-lt",
-							{
+					"Fn::Sub": [
+						"${AWS::StackName}-fgt-lt-${AZ}",
+						{
+							"AZ": {
 								"Fn::Select": [
-									"0",
+									0,
 									{
 										"Ref": "AZs"
 									}
 								]
 							}
-						]
+						}
 					]
 				},
 				"LaunchTemplateData": {
@@ -3623,7 +3670,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PublicSub1"
+								"Ref": "PublicSubnet1"
 							}
 						},
 						{
@@ -3636,7 +3683,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PrivateSub1"
+								"Ref": "PrivateSubnet1"
 							}
 						}
 					],
@@ -3647,22 +3694,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"0",
+														0,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -3674,22 +3717,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"0",
+														0,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -3703,22 +3742,18 @@
 			"Type": "AWS::EC2::LaunchTemplate",
 			"Properties": {
 				"LaunchTemplateName": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"fgt-lt",
-							{
+					"Fn::Sub": [
+						"${AWS::StackName}-fgt-lt-${AZ}",
+						{
+							"AZ": {
 								"Fn::Select": [
-									"1",
+									1,
 									{
 										"Ref": "AZs"
 									}
 								]
 							}
-						]
+						}
 					]
 				},
 				"LaunchTemplateData": {
@@ -3777,7 +3812,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PublicSub2"
+								"Ref": "PublicSubnet2"
 							}
 						},
 						{
@@ -3790,7 +3825,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PrivateSub2"
+								"Ref": "PrivateSubnet2"
 							}
 						}
 					],
@@ -3801,22 +3836,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"1",
+														1,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -3828,22 +3859,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"1",
+														1,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -3858,22 +3885,18 @@
 			"Condition": "3AZs+",
 			"Properties": {
 				"LaunchTemplateName": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"fgt-lt",
-							{
+					"Fn::Sub": [
+						"${AWS::StackName}-fgt-lt-${AZ}",
+						{
+							"AZ": {
 								"Fn::Select": [
-									"2",
+									2,
 									{
 										"Ref": "AZs"
 									}
 								]
 							}
-						]
+						}
 					]
 				},
 				"LaunchTemplateData": {
@@ -3932,7 +3955,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PublicSub3"
+								"Ref": "PublicSubnet3"
 							}
 						},
 						{
@@ -3945,7 +3968,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PrivateSub3"
+								"Ref": "PrivateSubnet3"
 							}
 						}
 					],
@@ -3956,22 +3979,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"2",
+														2,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -3983,22 +4002,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"2",
+														2,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -4013,22 +4028,18 @@
 			"Condition": "4AZs+",
 			"Properties": {
 				"LaunchTemplateName": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"fgt-lt",
-							{
+					"Fn::Sub": [
+						"${AWS::StackName}-fgt-lt-${AZ}",
+						{
+							"AZ": {
 								"Fn::Select": [
-									"3",
+									3,
 									{
 										"Ref": "AZs"
 									}
 								]
 							}
-						]
+						}
 					]
 				},
 				"LaunchTemplateData": {
@@ -4087,7 +4098,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PublicSub4"
+								"Ref": "PublicSubnet4"
 							}
 						},
 						{
@@ -4100,7 +4111,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PrivateSub4"
+								"Ref": "PrivateSubnet4"
 							}
 						}
 					],
@@ -4111,22 +4122,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"3",
+														3,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -4138,22 +4145,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"3",
+														3,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -4168,22 +4171,18 @@
 			"Condition": "5AZs+",
 			"Properties": {
 				"LaunchTemplateName": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"fgt-lt",
-							{
+					"Fn::Sub": [
+						"${AWS::StackName}-fgt-lt-${AZ}",
+						{
+							"AZ": {
 								"Fn::Select": [
-									"4",
+									4,
 									{
 										"Ref": "AZs"
 									}
 								]
 							}
-						]
+						}
 					]
 				},
 				"LaunchTemplateData": {
@@ -4242,7 +4241,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PublicSub5"
+								"Ref": "PublicSubnet5"
 							}
 						},
 						{
@@ -4255,7 +4254,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PrivateSub5"
+								"Ref": "PrivateSubnet5"
 							}
 						}
 					],
@@ -4266,22 +4265,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"4",
+														4,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -4293,22 +4288,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"4",
+														4,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -4323,22 +4314,18 @@
 			"Condition": "6AZs",
 			"Properties": {
 				"LaunchTemplateName": {
-					"Fn::Join": [
-						"-",
-						[
-							{
-								"Ref": "AWS::StackName"
-							},
-							"fgt-lt",
-							{
+					"Fn::Sub": [
+						"${AWS::StackName}-fgt-lt-${AZ}",
+						{
+							"AZ": {
 								"Fn::Select": [
-									"5",
+									5,
 									{
 										"Ref": "AZs"
 									}
 								]
 							}
-						]
+						}
 					]
 				},
 				"LaunchTemplateData": {
@@ -4397,7 +4384,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PublicSub6"
+								"Ref": "PublicSubnet6"
 							}
 						},
 						{
@@ -4410,7 +4397,7 @@
 								}
 							],
 							"SubnetId": {
-								"Ref": "PrivateSub6"
+								"Ref": "PrivateSubnet6"
 							}
 						}
 					],
@@ -4421,22 +4408,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"5",
+														5,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -4448,22 +4431,18 @@
 								{
 									"Key": "Name",
 									"Value": {
-										"Fn::Join": [
-											"-",
-											[
-												{
-													"Ref": "AWS::StackName"
-												},
-												"Fgt",
-												{
+										"Fn::Sub": [
+											"${AWS::StackName}-Fgt-${AZ}",
+											{
+												"AZ": {
 													"Fn::Select": [
-														"5",
+														5,
 														{
 															"Ref": "AZs"
 														}
 													]
 												}
-											]
+											}
 										]
 									}
 								}
@@ -4491,22 +4470,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt1a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt1a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"0",
+											0,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -4516,46 +4491,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"0",
+												0,
 												{
 													"Ref": "LicenseFilesFor1stFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -4577,23 +4524,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt1a-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt1a-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"0",
+															0,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -4612,19 +4554,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"0",
+																				0,
 																				{
 																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -4663,22 +4604,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt2a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt2a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"1",
+											1,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -4688,46 +4625,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"1",
+												1,
 												{
 													"Ref": "LicenseFilesFor1stFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -4749,23 +4658,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt2a-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt2a-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"1",
+															1,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -4784,19 +4688,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"1",
+																				1,
 																				{
 																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -4836,22 +4739,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt3a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt3a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"2",
+											2,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -4861,46 +4760,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"2",
+												2,
 												{
 													"Ref": "LicenseFilesFor1stFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -4922,23 +4793,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt3a-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt3a-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"2",
+															2,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -4957,19 +4823,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"2",
+																				2,
 																				{
 																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -5009,22 +4874,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt4a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt4a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"3",
+											3,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -5034,46 +4895,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"3",
+												3,
 												{
 													"Ref": "LicenseFilesFor1stFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -5095,23 +4928,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt4a-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt4a-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"3",
+															3,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -5130,19 +4958,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"3",
+																				3,
 																				{
 																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -5182,22 +5009,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt5a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt5a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"4",
+											4,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -5207,46 +5030,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"4",
+												4,
 												{
 													"Ref": "LicenseFilesFor1stFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -5268,23 +5063,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt5a-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt5a-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"4",
+															4,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -5303,19 +5093,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"4",
+																				4,
 																				{
 																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -5355,22 +5144,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt6a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt6a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"5",
+											5,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -5380,46 +5165,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"5",
+												5,
 												{
 													"Ref": "LicenseFilesFor1stFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -5441,23 +5198,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt6a-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt6a-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"5",
+															5,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -5476,19 +5228,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"5",
+																				5,
 																				{
 																					"Ref": "FortiFlexTokensFor1stFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -5528,22 +5279,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt1b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt1b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"0",
+											0,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -5553,46 +5300,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"0",
+												0,
 												{
 													"Ref": "LicenseFilesFor2ndFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -5614,23 +5333,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt1b-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt1b-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"0",
+															0,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -5649,19 +5363,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"0",
+																				0,
 																				{
 																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -5701,22 +5414,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt2b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt2b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"1",
+											1,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -5726,46 +5435,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"1",
+												1,
 												{
 													"Ref": "LicenseFilesFor2ndFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -5787,23 +5468,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt2b-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt2b-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"1",
+															1,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -5822,19 +5498,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"1",
+																				1,
 																				{
 																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -5874,22 +5549,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt3b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt3b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"2",
+											2,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -5899,46 +5570,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"2",
+												2,
 												{
 													"Ref": "LicenseFilesFor2ndFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -5960,23 +5603,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt3b-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fg31b-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"2",
+															2,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -5995,19 +5633,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"2",
+																				2,
 																				{
 																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -6047,22 +5684,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt4b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt4b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"3",
+											3,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6072,46 +5705,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"3",
+												3,
 												{
 													"Ref": "LicenseFilesFor2ndFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -6133,23 +5738,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt4b-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt4b-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"3",
+															3,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -6168,19 +5768,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"3",
+																				3,
 																				{
 																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -6220,22 +5819,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt5b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt5b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"4",
+											4,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6245,46 +5840,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"4",
+												4,
 												{
 													"Ref": "LicenseFilesFor2ndFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -6306,23 +5873,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt5b-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt5b-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"4",
+															4,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -6341,19 +5903,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"4",
+																				4,
 																				{
 																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -6393,22 +5954,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt6b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt6b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"5",
+											5,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6418,46 +5975,18 @@
 						"Fn::If": [
 							"BYOL",
 							{
-								"Fn::Join": [
-									"",
-									[
-										"{\n",
-										"\"bucket\"",
-										" : \"",
-										{
-											"Ref": "InitS3Bucket"
-										},
-										"\"",
-										",\n",
-										"\"region\"",
-										" : ",
-										"\"",
-										{
-											"Ref": "AWS::Region"
-										},
-										"\"",
-										",\n",
-										"\"license\"",
-										" : ",
-										"\"",
-										"/",
-										{
+								"Fn::Sub": [
+									"{\"bucket\":\"${InitS3Bucket}\",\"region\":\"${AWS::Region}\",\"license\":\"/${LicenseFile}\",\"config\":\"/fgt-config.txt\"}",
+									{
+										"LicenseFile": {
 											"Fn::Select": [
-												"5",
+												5,
 												{
 													"Ref": "LicenseFilesFor2ndFgtPerAZ"
 												}
 											]
-										},
-										"\"",
-										",\n",
-										"\"config\"",
-										" : ",
-										"\"",
-										"/fgt-config.txt\"",
-										"\n",
-										"}"
-									]
+										}
+									}
 								]
 							},
 							{
@@ -6479,23 +6008,18 @@
 										},
 										"config system global",
 										{
-											"Fn::Join": [
-												"",
-												[
-													"set hostname ",
-													{
-														"Ref": "AWS::StackName"
-													},
-													"-Fgt6b-",
-													{
+											"Fn::Sub": [
+												"set hostname ${AWS::StackName}-Fgt6b-${AZ}",
+												{
+													"AZ": {
 														"Fn::Select": [
-															"5",
+															5,
 															{
 																"Ref": "AZs"
 															}
 														]
 													}
-												]
+												}
 											]
 										},
 										"end",
@@ -6514,19 +6038,18 @@
 															"Content-Disposition: attachment; filename='license'",
 															"",
 															{
-																"Fn::Join": [
-																	"",
-																	[
-																		"LICENSE-TOKEN: ",
-																		{
+																"Fn::Sub": [
+																	"LICENSE-TOKEN: ${Token}",
+																	{
+																		"Token": {
 																			"Fn::Select": [
-																				"5",
+																				5,
 																				{
 																					"Ref": "FortiFlexTokensFor2ndFgtPerAZ"
 																				}
 																			]
 																		}
-																	]
+																	}
 																]
 															},
 															""
@@ -6555,22 +6078,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt1a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt1a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"0",
+											0,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6585,22 +6104,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt2a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt2a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"1",
+											1,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6616,22 +6131,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt3a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt3a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"2",
+											2,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6647,22 +6158,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt4a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt4a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"3",
+											3,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6678,22 +6185,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt5a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt5a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"4",
+											4,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6709,22 +6212,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt6a",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt6a-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"5",
+											5,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6740,22 +6239,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt1b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt1b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"0",
+											0,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6771,22 +6266,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt2b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt2b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"1",
+											1,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6802,22 +6293,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt3b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt3b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"2",
+											2,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6833,22 +6320,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt4b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt4b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"3",
+											3,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6864,22 +6347,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt5b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt5b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"4",
+											4,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -6895,22 +6374,18 @@
 					{
 						"Key": "Name",
 						"Value": {
-							"Fn::Join": [
-								"-",
-								[
-									{
-										"Ref": "AWS::StackName"
-									},
-									"Fgt6b",
-									{
+							"Fn::Sub": [
+								"${AWS::StackName}-Fgt6b-${AZ}",
+								{
+									"AZ": {
 										"Fn::Select": [
-											"5",
+											5,
 											{
 												"Ref": "AZs"
 											}
 										]
 									}
-								]
+								}
 							]
 						}
 					}
@@ -7621,6 +7096,21 @@
 								"",
 								"template = '''\\",
 								"config system global",
+								{
+									"Fn::Join": [
+										"",
+										[
+											"set hostname ",
+											{
+												"Ref": "AWS::StackName"
+											},
+											"-Fgt-",
+											{
+												"Ref": "AWS::Region"
+											}
+										]
+									]
+								},
 								"set admintimeout 60",
 								"end",
 								"config system interface",
@@ -8408,10 +7898,7 @@
 		},
 		"VpcEndpointServiceName": {
 			"Value": {
-				"Fn::GetAtt": [
-					"RunDescribeVpceService",
-					"ServiceName"
-				]
+				"Fn::Sub": "com.amazonaws.vpce.${AWS::Region}.${VpcEndpointService}"
 			},
 			"Description": "VPC endpoint service name, for use in spoke template"
 		},
@@ -8456,6 +7943,30 @@
 			},
 			"Condition": "ExistingTGW",
 			"Description": "Existing Transit Gateway Route Table ID that the spoke VPCs will associate to, for use in spoke template"
+		},
+		"CloudWAN": {
+			"Value": {
+				"Ref": "CoreNetwork"
+			},
+			"Condition": "CreateCwan",
+			"Description": "Cloud WAN Core Network ID, for use in spoke template"
+		},
+		"CloudWanSegmentKey": {
+			"Value": "segment",
+			"Condition": "CreateCwan",
+			"Description": "Cloud WAN segment key, for use in spoke template"
+		},
+		"ClouCloudWanSegmentValue": {
+			"Value": "production,development,sharedservices",
+			"Condition": "CreateCwan",
+			"Description": "Cloud WAN segment value (use one of the examples), for use in spoke template"
+		},
+		"ExistingCloudWAN": {
+			"Value": {
+				"Ref": "CwanExisting"
+			},
+			"Condition": "ExistingCwan",
+			"Description": "Existing Cloud WAN Core Network ID, for use in spoke template"
 		}
 	}
 }
