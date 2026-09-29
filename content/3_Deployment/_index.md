@@ -37,7 +37,7 @@ Once the prerequisites have been satisfied proceed with the deployment steps bel
 
 6.  In the FortiGate Instance Configuration parameters section, we have selected the number of FGTs per AZ to 2 and Key Pair to use for the FGTs as well as Flex licensing.  Since we are using FLEX licensing, we can leave the InitS3Bucket empty but need to specify the Flex tokens to use.  Then select Next.
 	
-	{{% notice tip %}}Since we are deploying 2 FGTs per AZ, we are specifying the first set of Flex tokens for FGT1a and FGT2a in FortiFlexTokensFor1stFgtPerAZ and then the second set for FGT1b and FGT2b in FortiFlexTokensFor2ndFgtPerAZ.{{% /notice %}}
+	{{% notice tip %}}We selected for a dedicated management interface to be created and placed in the public subnet. The CloudFormation outputs will show the EIP assigned to each FGT's dedicated management interface as the internet access mode is set to EIP.  Also, since 2 FGT are specified per AZ, I have 4 FortiFlex tokens provided. {{% /notice %}}
 
 	![](deploy5.png)
 
@@ -50,6 +50,8 @@ Once the prerequisites have been satisfied proceed with the deployment steps bel
      ![](deploy7.png)
 
 9.  Once the stack creation has completed successfully, select the Outputs tab to get the login information for the FGT instances.  If you chose to deploy a new TGW as part of the deployment you will see the IDs of your Transit Gateway and TGW Route Tables.  These will be used as inputs for the **'NewVPC_Spoke_GWLBe_MultiAZ.template.json'** template.
+
+	{{% notice tip %}}We are choosing to use distributed inspection for some flows and centralized inspection for other flows. For spoke1 we are capturing ingress traffic at the IGW while using centralized egress for the private subnets. For spoke2 we are capturing both ingress and egress traffic within the VPC and only sending east/west traffic for centralized inspection.{{% /notice %}}
 
      ![](deploy8a.png)
      ![](deploy8b.png)
