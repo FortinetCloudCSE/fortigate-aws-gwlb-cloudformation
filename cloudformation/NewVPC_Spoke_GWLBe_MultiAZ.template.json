@@ -1761,7 +1761,7 @@
 		},
 		"VpcRoutingOption2RoutePublicSubnets3Az1": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "VpcRoutingOption2",
+			"Condition": "3AZsAndVpcRoutingOption2",
 			"DependsOn": "GwlbEndpoint1",
 			"Properties": {
 				"RouteTableId": {
@@ -1782,7 +1782,7 @@
 		},
 		"VpcRoutingOption2RoutePublicSubnets3Az2": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "VpcRoutingOption2",
+			"Condition": "3AZsAndVpcRoutingOption2",
 			"DependsOn": "GwlbEndpoint2",
 			"Properties": {
 				"RouteTableId": {
@@ -2458,7 +2458,7 @@
 		},
 		"VpcRoutingOption4RoutePublicSubnets3Az1": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "VpcRoutingOption4",
+			"Condition": "3AZsAndVpcRoutingOption4",
 			"DependsOn": "GwlbEndpoint1",
 			"Properties": {
 				"RouteTableId": {
@@ -2479,7 +2479,7 @@
 		},
 		"VpcRoutingOption4RoutePublicSubnets3Az2": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "VpcRoutingOption4",
+			"Condition": "3AZsAndVpcRoutingOption4",
 			"DependsOn": "GwlbEndpoint2",
 			"Properties": {
 				"RouteTableId": {
