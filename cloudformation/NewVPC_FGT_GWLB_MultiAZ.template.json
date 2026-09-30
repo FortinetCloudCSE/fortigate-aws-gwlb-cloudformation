@@ -1736,7 +1736,13 @@
 				],
 				"LoadBalancerArn": {
 					"Ref": "Gwlb"
-				}
+				},
+				"ListenerAttributes": [
+					{
+						"Key": "tcp.idle_timeout.seconds",
+						"Value": "3600"
+					}
+				]
 			}
 		},
 		"VpcEndpointService": {
