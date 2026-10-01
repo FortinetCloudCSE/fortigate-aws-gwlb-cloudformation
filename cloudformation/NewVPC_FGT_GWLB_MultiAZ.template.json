@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v26.3.1) Deploy a multi AZ A-A solution,repo: https://github.com/FortinetCloudCSE/fortigate-aws-gwlb-cloudformation",
+	"Description": "(v26.3.3) Deploy a multi AZ A-A solution,repo: https://github.com/FortinetCloudCSE/fortigate-aws-gwlb-cloudformation",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -327,7 +327,7 @@
 		},
 		"FortiOSVersion": {
 			"Type": "String",
-			"Default": "7.4.x",
+			"Default": "7.6.x",
 			"Description": "Select the version of FortiOS to use (latest GA AMI will be used)",
 			"AllowedValues": [
 				"7.4.x",
@@ -711,13 +711,30 @@
 				}
 			]
 		},
-		"OneArmAndUseNatGWAndCwanOrTgwUsed": {
-			"Fn::And": [
+		"UseNatGwOrOneArm": {
+			"Fn::Or": [
 				{
 					"Condition": "OneArm"
 				},
 				{
 					"Condition": "UseNatGW"
+				}
+			]
+		},
+		"3AZsAndUseNatGwOrOneArm": {
+			"Fn::And": [
+				{
+					"Condition": "UseNatGwOrOneArm"
+				},
+				{
+					"Condition": "3AZs"
+				}
+			]
+		},
+		"OneArmAndCwanOrTgwUsed": {
+			"Fn::And": [
+				{
+					"Condition": "OneArm"
 				},
 				{
 					"Condition": "CwanOrTgwUsed"
@@ -2241,7 +2258,7 @@
 		},
 		"NatGatewayEIP1": {
 			"Type": "AWS::EC2::EIP",
-			"Condition": "UseNatGW",
+			"Condition": "UseNatGwOrOneArm",
 			"DependsOn": "AttachGateway",
 			"Properties": {
 				"Domain": "vpc",
@@ -2257,7 +2274,7 @@
 		},
 		"NatGatewayEIP2": {
 			"Type": "AWS::EC2::EIP",
-			"Condition": "UseNatGW",
+			"Condition": "UseNatGwOrOneArm",
 			"DependsOn": "AttachGateway",
 			"Properties": {
 				"Domain": "vpc",
@@ -2273,7 +2290,7 @@
 		},
 		"NatGatewayEIP3": {
 			"Type": "AWS::EC2::EIP",
-			"Condition": "3AZsAndUseNatGW",
+			"Condition": "3AZsAndUseNatGwOrOneArm",
 			"DependsOn": "AttachGateway",
 			"Properties": {
 				"Domain": "vpc",
@@ -2289,7 +2306,7 @@
 		},
 		"NatGateway": {
 			"Type": "AWS::EC2::NatGateway",
-			"Condition": "UseNatGW",
+			"Condition": "UseNatGwOrOneArm",
 			"Properties": {
 				"VpcId": {
 					"Ref": "VPC"
@@ -2399,7 +2416,7 @@
 		},
 		"RouteGwlbNatGw": {
 			"Type": "AWS::EC2::Route",
-			"Condition": "OneArmAndUseNatGWAndCwanOrTgwUsed",
+			"Condition": "OneArmAndCwanOrTgwUsed",
 			"Properties": {
 				"RouteTableId": {
 					"Ref": "GwlbRouteTable"
@@ -3203,43 +3220,59 @@
 							],
 							"require-attachment-acceptance": false,
 							"isolate-attachments": false
-						},
+						}
+					],
+					"network-function-groups": [
 						{
 							"name": "inspection",
-							"description": "ngfw-segment",
-							"edge-locations": [
-								{
-									"Ref": "AWS::Region"
-								}
-							],
-							"require-attachment-acceptance": false,
-							"isolate-attachments": false
+							"description": "ngfw-network-function-group",
+							"require-attachment-acceptance": false
 						}
 					],
 					"segment-actions": [
 						{
-							"action": "share",
-							"mode": "attachment-route",
+							"action": "send-to",
 							"segment": "production",
-							"share-with": [
-								"inspection"
-							]
+							"via": {
+								"network-function-groups": [
+									"inspection"
+								]
+							}
 						},
 						{
-							"action": "share",
-							"mode": "attachment-route",
+							"action": "send-to",
 							"segment": "development",
-							"share-with": [
-								"inspection"
-							]
+							"via": {
+								"network-function-groups": [
+									"inspection"
+								]
+							}
 						},
 						{
-							"action": "share",
-							"mode": "attachment-route",
+							"action": "send-to",
 							"segment": "sharedservices",
-							"share-with": [
-								"inspection"
-							]
+							"via": {
+								"network-function-groups": [
+									"inspection"
+								]
+							}
+						},
+						{
+							"action": "send-via",
+							"mode": "single-hop",
+							"segment": "production",
+							"via": {
+								"network-function-groups": [
+									"inspection"
+								]
+							},
+							"when-sent-to": {
+								"segments": [
+									"sharedservices",
+									"production",
+									"development"
+								]
+							}
 						}
 					],
 					"attachment-policies": [
@@ -3296,15 +3329,14 @@
 							"condition-logic": "and",
 							"conditions": [
 								{
-									"type": "tag-value",
 									"key": "segment",
 									"operator": "contains",
+									"type": "tag-value",
 									"value": "inspection"
 								}
 							],
 							"action": {
-								"association-method": "constant",
-								"segment": "inspection"
+								"add-to-network-function-group": "inspection"
 							}
 						}
 					]
