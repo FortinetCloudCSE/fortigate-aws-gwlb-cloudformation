@@ -1,6 +1,6 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "(v26.3.1) AWS CFT to deploy a multi AZ spoke VPC for a GWLB A-A solution, repo: https://github.com/FortinetCloudCSE/fortigate-aws-gwlb-cloudformation",
+	"Description": "(v26.4.1) AWS CFT to deploy a multi AZ spoke VPC for a GWLB A-A solution, repo: https://github.com/FortinetCloudCSE/fortigate-aws-gwlb-cloudformation",
 	"Metadata": {
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [
@@ -1067,9 +1067,6 @@
 				"VpcId": {
 					"Ref": "VPC"
 				},
-				"Options": {
-					"ApplianceModeSupport": "enable"
-				},
 				"Tags": [
 					{
 						"Key": "Name",
@@ -1112,9 +1109,6 @@
 			"Properties": {
 				"CoreNetworkId": {
 					"Ref": "CloudWan"
-				},
-				"Options": {
-					"ApplianceModeSupport": "true"
 				},
 				"SubnetArns": [
 					{
